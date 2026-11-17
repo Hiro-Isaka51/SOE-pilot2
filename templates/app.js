@@ -650,7 +650,13 @@
     document.body.dataset.mode = simpleMode ? "simple" : "analyst";
     if (!simpleMode) S.lastAnalyst = id;
     const ms = document.getElementById("modeSwitch");
-    if (ms) ms.textContent = simpleMode ? "Analyst view" : "Simple view";
+    if (ms) {
+      ms.dataset.selected = simpleMode ? "simple" : "analyst";
+      ms.querySelectorAll("[data-mode-target]").forEach((btn) => {
+        const selected = btn.dataset.modeTarget === ms.dataset.selected;
+        btn.setAttribute("aria-pressed", String(selected));
+      });
+    }
     document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
     // Government Support and Technical notes are off the tab bar; their tab shows only while one of them is open
     document.querySelectorAll("#tabs li.tab-hidden").forEach((li) => { li.hidden = li.querySelector("button").dataset.tab !== id; });
@@ -671,7 +677,12 @@
   }
   document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); }));
   const modeSw = document.getElementById("modeSwitch");
-  if (modeSw) modeSw.addEventListener("click", () => { showTab(SIMPLE_TABS.has(S.tab) ? (S.lastAnalyst || "home") : "simple"); window.scrollTo({ top: 0 }); });
+  if (modeSw) modeSw.querySelectorAll("[data-mode-target]").forEach((btn) => btn.addEventListener("click", () => {
+    const target = btn.dataset.modeTarget;
+    if ((target === "simple") === SIMPLE_TABS.has(S.tab)) return;
+    showTab(target === "simple" ? "simple" : (S.lastAnalyst || "home"));
+    window.scrollTo({ top: 0 });
+  }));
   const bandUp = document.getElementById("bandUpload");
   if (bandUp) bandUp.addEventListener("click", () => {
     showTab("home"); window.scrollTo({ top: 0 });
@@ -1035,9 +1046,9 @@
         el("details", { class: "lp-about-fold" },
           el("summary", {}, "About this tool"),
         el("div", { class: "lp-intro" },
-          el("p", {}, ...moreText(
+          el("p", {}, 
             "Governments often learn about the fiscal cost of a state-owned enterprise only when it asks for a bailout, builds up arrears, or calls on a guarantee. This tool helps ministries of finance, SOE monitoring units, and World Bank country teams spot those risks earlier. Using basic financial statements, it scores each SOE with the Altman Z″, a well-established measure of financial health calibrated for emerging markets, and ranks the portfolio by distress score to show which enterprises are most likely to need support from the budget. Alongside this distress score, the tool computes complementary financial indicators that provide additional context on liquidity, leverage, and operational performance. The Z″-score is then mapped to a shadow credit rating, which is used to derive an estimate of expected fiscal cost by combining the implied probability of default with sector-specific loss assumptions to express the potential government exposure as a share of GDP.",
-            "Users can also simulate how fiscal exposure changes under macroeconomic shocks including fuel price movements, exchange rate shifts, and revenue contractions, and assess risk across the portfolio as a whole. The tool does not capture every source of SOE-related fiscal risk, and pricing subsidies, uncompensated public service obligations, and quasi-fiscal deficits require additional analysis, but as a first-pass screening instrument built for environments where data is limited and capacity is stretched, it offers a practical starting point for governments that want to move from reactive crisis management to proactive fiscal risk monitoring.")))),
+            "Users can also simulate how fiscal exposure changes under macroeconomic shocks including fuel price movements, exchange rate shifts, and revenue contractions, and assess risk across the portfolio as a whole. The tool does not capture every source of SOE-related fiscal risk, and pricing subsidies, uncompensated public service obligations, and quasi-fiscal deficits require additional analysis, but as a first-pass screening instrument built for environments where data is limited and capacity is stretched, it offers a practical starting point for governments that want to move from reactive crisis management to proactive fiscal risk monitoring."))),
         // how the tool gets there, under the data so the upload box stays on the first screen
         el("section", { class: "lp-sec", "aria-labelledby": "lp-h-calc" }, el("h3", { class: "lp-h", id: "lp-h-calc" }, "What the tool calculates"), steps, scope),
         el("nav", { class: "lp-links", "aria-label": "More" }, go("how", "How it works, step by step"), go("report", "Report"), go("about", "About the tool and your data"))));

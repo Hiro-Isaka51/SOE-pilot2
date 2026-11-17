@@ -75,7 +75,8 @@ button { font: inherit; }
 /* title band */
 .band { background: var(--band-bg); color: var(--band-ink); }
 .band .inner { padding-block: 18px 16px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; }
-.eyebrow { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #7FDBFF; font-weight: 700; }
+.eyebrow { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #0071BC; font-weight: 700; }
+.band .eyebrow { color: #7FDBFF; }
 .band h1 { color: var(--band-ink); font-size: clamp(20px, 2.6vw, 26px); font-weight: 700; letter-spacing: -.01em; margin-top: 2px; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .meta span { font-size: 12px; color: var(--band-ink-2); background: var(--band-chip); border-radius: 2px; padding: 3px 9px; }
@@ -424,69 +425,57 @@ g.row:hover .bar.neg { fill: var(--neg); filter: brightness(.9); }
 .band-upload:hover { background: rgba(255, 255, 255, .12); }
 .band-upload:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Mode navigation: a clearly recognizable, accessible pill rather than a plain outline button.
-   Its label always names the destination (Analyst view / Simple view). */
-#modeSwitch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  min-height: 36px;
-  padding: 5px 12px 5px 7px;
+/* Two-option segmented view control, with sliding active selection. */
+.view-segment {
+  --segment-pad: 4px;
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  padding: var(--segment-pad);
+  border: 1px solid rgba(170,220,245,.55);
   border-radius: 999px;
-  border: 1px solid rgba(125, 219, 255, .75);
-  color: #002244;
-  background: linear-gradient(125deg, #a9ebff, #73d4f6);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .12), inset 0 1px 0 rgba(255,255,255,.6);
+  background: rgba(255,255,255,.09);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.13);
+  min-height: 40px;
+  isolation: isolate;
+}
+.view-segment-thumb {
+  position: absolute;
+  z-index: 0;
+  top: var(--segment-pad);
+  bottom: var(--segment-pad);
+  left: var(--segment-pad);
+  width: calc((100% - 2 * var(--segment-pad)) / 2);
+  border-radius: 999px;
+  background: #b4edff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.19);
+  transform: translateX(0);
+  transition: transform .28s cubic-bezier(.2,.75,.2,1), background-color .2s ease;
+}
+.view-segment[data-selected="analyst"] .view-segment-thumb { transform: translateX(100%); }
+.view-segment-option {
+  position: relative;
+  z-index: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #e4f4fd;
+  font: inherit;
   font-size: 12.5px;
   font-weight: 700;
-  letter-spacing: .005em;
-  transition: background .2s ease, box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: color .2s ease;
 }
-#modeSwitch::before {
-  content: "⇄";
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border-radius: 50%;
-  background: #002244;
-  color: #bceeff;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1;
-  transition: transform .25s ease, background .2s ease, color .2s ease;
-}
-#modeSwitch::after { content: "↗"; font-size: 14px; line-height: 1; opacity: .75; margin-left: 1px; }
-#modeSwitch:hover {
-  background: linear-gradient(125deg, #d3f5ff, #8de0fb);
-  border-color: #d8f6ff;
-  box-shadow: 0 3px 15px rgba(88, 204, 246, .30);
-  transform: translateY(-1px);
-}
-#modeSwitch:hover::before { transform: rotate(180deg); }
-#modeSwitch:active { transform: translateY(0) scale(.98); }
-#modeSwitch:focus-visible { outline: 3px solid #bceeff; outline-offset: 3px; }
-/* When looking at detailed analysis, visually quieten the return-to-simple control. */
-body[data-mode="analyst"] #modeSwitch {
-  background: rgba(120, 204, 242, .13);
-  color: #d7f5ff;
-  border-color: rgba(151, 217, 246, .62);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
-}
-body[data-mode="analyst"] #modeSwitch::before { background: #9ee7ff; color: #002244; }
-body[data-mode="analyst"] #modeSwitch:hover {
-  background: rgba(120, 204, 242, .24);
-  border-color: #bceeff;
-  box-shadow: 0 3px 14px rgba(88, 204, 246, .15);
-}
+.view-segment-option[aria-pressed="true"] { color: #002244; cursor: default; }
+.view-segment-option[aria-pressed="false"]:hover { color: #fff; }
+.view-segment-option:focus-visible { outline: 2px solid #b4edff; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
-  #modeSwitch, #modeSwitch::before { transition: none; }
-  #modeSwitch:hover, #modeSwitch:active { transform: none; }
-  #modeSwitch:hover::before { transform: none; }
+  .view-segment-thumb, .view-segment-option { transition: none; }
 }
-
 
 /* home: load data (top of the page) */
 .upload-card { margin-bottom: 4px; }
@@ -1636,6 +1625,7 @@ body[data-mode="simple"] #bandUpload { display: none; }
 .lp-about-fold > summary:hover { background: var(--surface-alt, rgba(120,145,170,.06)); }
 .lp-about-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .lp-about-fold .lp-intro { padding: 0 18px 16px; margin: 0; max-width: none; }
+
 </style>
 
 <header class="band">
@@ -1646,7 +1636,11 @@ body[data-mode="simple"] #bandUpload { display: none; }
     </div>
     <div class="band-right">
       <div class="meta" id="meta"></div>
-      <button type="button" class="band-upload" id="modeSwitch">Analyst view</button>
+      <div class="view-segment" id="modeSwitch" role="group" aria-label="Dashboard view">
+        <span class="view-segment-thumb" aria-hidden="true"></span>
+        <button type="button" class="view-segment-option" data-mode-target="simple" aria-pressed="true">Simple view</button>
+        <button type="button" class="view-segment-option" data-mode-target="analyst" aria-pressed="false">Analyst view</button>
+      </div>
       <button type="button" class="band-upload" id="bandUpload">⬆ Upload data</button>
     </div>
   </div>
@@ -1660,9 +1654,9 @@ body[data-mode="simple"] #bandUpload { display: none; }
       <li><button role="tab" id="t-kpi" aria-controls="kpi" data-tab="kpi">KPI Dashboard</button></li>
       <li><button role="tab" id="t-altman" aria-controls="altman" data-tab="altman">Distress Indicator</button></li>
       <li><button role="tab" id="t-efc" aria-controls="efc" data-tab="efc">Expected Fiscal Cost</button></li>
+      <li><button role="tab" id="t-shock" aria-controls="shock" data-tab="shock">Shock Scenarios</button></li>
       <li><button role="tab" id="t-warning" aria-controls="warning" data-tab="warning">Early Warning</button></li>
       <li><button role="tab" id="t-report" aria-controls="report" data-tab="report">Report</button></li>
-      <li><button role="tab" id="t-shock" aria-controls="shock" data-tab="shock">Shock Scenarios</button></li>
       <!-- hidden from the tab bar (meeting 2026-10-26); still reachable from links and #view-gre / #view-assumptions / #view-about -->
       <li class="tab-hidden" hidden><button role="tab" id="t-gre" aria-controls="gre" data-tab="gre">Government Support</button></li>
       <li class="tab-hidden" hidden><button role="tab" id="t-assumptions" aria-controls="assumptions" data-tab="assumptions">Technical notes</button></li>
@@ -3407,7 +3401,13 @@ body[data-mode="simple"] #bandUpload { display: none; }
     document.body.dataset.mode = simpleMode ? "simple" : "analyst";
     if (!simpleMode) S.lastAnalyst = id;
     const ms = document.getElementById("modeSwitch");
-    if (ms) ms.textContent = simpleMode ? "Analyst view" : "Simple view";
+    if (ms) {
+      ms.dataset.selected = simpleMode ? "simple" : "analyst";
+      ms.querySelectorAll("[data-mode-target]").forEach((btn) => {
+        const selected = btn.dataset.modeTarget === ms.dataset.selected;
+        btn.setAttribute("aria-pressed", String(selected));
+      });
+    }
     document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
     // Government Support and Technical notes are off the tab bar; their tab shows only while one of them is open
     document.querySelectorAll("#tabs li.tab-hidden").forEach((li) => { li.hidden = li.querySelector("button").dataset.tab !== id; });
@@ -3428,7 +3428,12 @@ body[data-mode="simple"] #bandUpload { display: none; }
   }
   document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); }));
   const modeSw = document.getElementById("modeSwitch");
-  if (modeSw) modeSw.addEventListener("click", () => { showTab(SIMPLE_TABS.has(S.tab) ? (S.lastAnalyst || "home") : "simple"); window.scrollTo({ top: 0 }); });
+  if (modeSw) modeSw.querySelectorAll("[data-mode-target]").forEach((btn) => btn.addEventListener("click", () => {
+    const target = btn.dataset.modeTarget;
+    if ((target === "simple") === SIMPLE_TABS.has(S.tab)) return;
+    showTab(target === "simple" ? "simple" : (S.lastAnalyst || "home"));
+    window.scrollTo({ top: 0 });
+  }));
   const bandUp = document.getElementById("bandUpload");
   if (bandUp) bandUp.addEventListener("click", () => {
     showTab("home"); window.scrollTo({ top: 0 });
@@ -3792,9 +3797,9 @@ body[data-mode="simple"] #bandUpload { display: none; }
         el("details", { class: "lp-about-fold" },
           el("summary", {}, "About this tool"),
         el("div", { class: "lp-intro" },
-          el("p", {}, ...moreText(
+          el("p", {}, 
             "Governments often learn about the fiscal cost of a state-owned enterprise only when it asks for a bailout, builds up arrears, or calls on a guarantee. This tool helps ministries of finance, SOE monitoring units, and World Bank country teams spot those risks earlier. Using basic financial statements, it scores each SOE with the Altman Z″, a well-established measure of financial health calibrated for emerging markets, and ranks the portfolio by distress score to show which enterprises are most likely to need support from the budget. Alongside this distress score, the tool computes complementary financial indicators that provide additional context on liquidity, leverage, and operational performance. The Z″-score is then mapped to a shadow credit rating, which is used to derive an estimate of expected fiscal cost by combining the implied probability of default with sector-specific loss assumptions to express the potential government exposure as a share of GDP.",
-            "Users can also simulate how fiscal exposure changes under macroeconomic shocks including fuel price movements, exchange rate shifts, and revenue contractions, and assess risk across the portfolio as a whole. The tool does not capture every source of SOE-related fiscal risk, and pricing subsidies, uncompensated public service obligations, and quasi-fiscal deficits require additional analysis, but as a first-pass screening instrument built for environments where data is limited and capacity is stretched, it offers a practical starting point for governments that want to move from reactive crisis management to proactive fiscal risk monitoring.")))),
+            "Users can also simulate how fiscal exposure changes under macroeconomic shocks including fuel price movements, exchange rate shifts, and revenue contractions, and assess risk across the portfolio as a whole. The tool does not capture every source of SOE-related fiscal risk, and pricing subsidies, uncompensated public service obligations, and quasi-fiscal deficits require additional analysis, but as a first-pass screening instrument built for environments where data is limited and capacity is stretched, it offers a practical starting point for governments that want to move from reactive crisis management to proactive fiscal risk monitoring."))),
         // how the tool gets there, under the data so the upload box stays on the first screen
         el("section", { class: "lp-sec", "aria-labelledby": "lp-h-calc" }, el("h3", { class: "lp-h", id: "lp-h-calc" }, "What the tool calculates"), steps, scope),
         el("nav", { class: "lp-links", "aria-label": "More" }, go("how", "How it works, step by step"), go("report", "Report"), go("about", "About the tool and your data"))));

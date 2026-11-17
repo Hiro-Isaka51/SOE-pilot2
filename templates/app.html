@@ -14,7 +14,11 @@
     </div>
     <div class="band-right">
       <div class="meta" id="meta"></div>
-      <button type="button" class="band-upload" id="modeSwitch">Analyst view</button>
+      <div class="view-segment" id="modeSwitch" role="group" aria-label="Dashboard view">
+        <span class="view-segment-thumb" aria-hidden="true"></span>
+        <button type="button" class="view-segment-option" data-mode-target="simple" aria-pressed="true">Simple view</button>
+        <button type="button" class="view-segment-option" data-mode-target="analyst" aria-pressed="false">Analyst view</button>
+      </div>
       <button type="button" class="band-upload" id="bandUpload">⬆ Upload data</button>
     </div>
   </div>
