@@ -501,3 +501,13 @@ back exactly (it also switches cash-first off); `cash_buffer_share = 0`
 keeps the balanced balance sheet but borrows every shortfall, which is the
 064ac24 engine bit for bit (`tests/check_fuel_path_cash.py`).
 
+
+## Simple view (November 2026)
+
+The HTML tool opens in a **Simple view** for country economists: load the accounts, pick one of eight
+scenarios, read the cost to the budget with its range, open one SOE for the reasons and the follow-up. It has
+no sliders. The tabs described above are unchanged and sit behind the **Analyst view** button in the header;
+`#view-<tab>` links open them directly. The Simple view lives in `templates/simple.js` and
+`templates/simple.css`, uses the same functions and settings as Home, Report and Early Warning, and is checked
+by `tests/check_simple_view.py` (needs Playwright). See `docs/CHANGES-simple-view.md` and
+`docs/DESIGN-simple-view.md`.
