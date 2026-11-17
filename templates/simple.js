@@ -146,7 +146,7 @@
   const svNum = (v) => v !== null && v !== undefined && ok(v);
   /** the World Bank series in the statements' currency, as the Analyst GDP field picks it by default */
   const svSeries = () => (stmtCurrency() === "USD" ? "CD" : "CN");
-  const svGdpYear = () => String(last(S.years));
+  const svGdpYear = () => String(S.gdpYear || last(S.years));
   /** a section heading with its step number */
   const svHead = (n, id, title, sub) => el("div", { class: "sv-head" },
     n ? el("span", { class: "sv-n num", "aria-hidden": "true" }, String(n)) : null,
@@ -177,21 +177,17 @@
       });
       U.summary = el("p", { id: "sv-summary", class: "sv-summary" });
       U.gdpSel = el("div", { class: "sv-gdp-sel" });
+      U.gdpYearSel = el("div", { class: "sv-gdp-year-sel" });
       U.gdp = el("div", { class: "sv-gdp-box" });
-      U.typed = el("input", { type: "text", inputmode: "decimal", id: "sv-gdp-typed", autocomplete: "off" });
-      U.typedErr = el("small", { class: "sv-gdp-err", role: "alert" });
-      U.typed.addEventListener("change", () => this.typedGdp());
-      U.typedLbl = el("label", { for: "sv-gdp-typed" });
-      U.gdpLine = el("div", { class: "sv-gdp-line" });
-      U.typedBox = el("div", { class: "fld sv-gdp-typed", hidden: true }, U.typedLbl, U.typed, U.typedErr); // kept in place so it keeps focus
-      U.gdp.append(U.gdpLine, U.typedBox);
+      U.gdpLine = el("div", { class: "sv-gdp-line", "aria-live": "polite" });
+      U.gdp.append(U.gdpLine);
       U.loaded = el("div", { class: "sv-loaded" });
       U.examples = el("div");
       const data = el("section", { id: "sv-data", class: "card sv-sec sv-data", "aria-labelledby": "sv-h-data" },
         el("div", { class: "sv-data-top" },
           el("div", { class: "sv-data-what" }, svHead(1, "sv-h-data", "Your data"), U.summary),
           el("div", { class: "sv-data-act" }, el("button", { type: "button", class: "btn primary", onclick: () => U.file.click() }, "Upload your file"), tpl, U.file)),
-        el("div", { class: "sv-gdp-row" }, U.gdpSel, U.gdp),
+        el("div", { class: "sv-gdp-row" }, U.gdpSel, U.gdpYearSel, U.gdp),
         U.loaded, U.msg, U.examples);
       data.addEventListener("dragover", (e) => { e.preventDefault(); data.classList.add("over"); });
       data.addEventListener("dragleave", (e) => { if (!data.contains(e.relatedTarget)) data.classList.remove("over"); });
@@ -241,38 +237,57 @@
         DATASETS.report && !copyOf ? ds("report", "Report data", DATASETS.report.label) : null,
         ds("sample", "Example", "SOE A and B, 2020–2024"), ds("demo", "Demo portfolio", "8 SOEs in 7 sectors"), ds("long", "Long panel", "30 SOEs, 20 years"))]));
       this.renderCountry();
+      this.renderYear();
       this.renderGdp();
     },
-    /** one country select, only when the data do not name the country */
+    /** Country and year are visible in Simple view; the World Bank GDP lookup uses both. */
     renderCountry() {
       const U = this.U, dc = dataCountry();
-      if (dc && !S.gdpCountry) S.gdpCountry = dc; // as the Analyst GDP field does with a Country column
-      U.gdpSel.hidden = !!dc;
-      if (dc) { put(U.gdpSel); return; }
+      if (dc && !S.gdpCountry) S.gdpCountry = dc;
       const opts = [["", "Select a country…"], ...GDP_COUNTRIES.slice().sort((a, b) => a[1].localeCompare(b[1])).map(([c, n]) => [c, n])];
-      put(U.gdpSel, fSelect("Country (for the share of GDP)", opts, S.gdpCountry || "", (v) => this.pickCountry(v), { id: "sv-country" }));
+      put(U.gdpSel, fSelect("Country", opts, S.gdpCountry || "", (v) => this.pickCountry(v), { id: "sv-country" }));
+    },
+    renderYear() {
+      const U = this.U, topYear = Math.max(new Date().getFullYear() - 1, last(S.years) || 0);
+      if (!S.gdpYear) S.gdpYear = String(last(S.years) || topYear);
+      const opts = [];
+      for (let yr = topYear; yr >= 1960; --yr) opts.push([String(yr), String(yr)]);
+      put(U.gdpYearSel, fSelect("GDP year", opts, svGdpYear(), (v) => this.pickYear(v), { id: "sv-gdp-year" }));
     },
     pickCountry(v) {
       S.gdpCountry = v;
-      if (S.gdpSrc && S.gdpSrc.kind === "wb" && S.gdpSrc.country !== v) { S.gdp = null; S.gdpSrc = null; }
+      S.gdp = null; S.gdpSrc = null;
+      S.simple.gdpKey = "";
       if (v) this.lookup(true);
       this.gdpChanged();
     },
-    /** World Bank GDP for the latest year in the data, in the statements' currency; stored as the Analyst field stores it */
+    pickYear(v) {
+      S.gdpYear = v;
+      S.gdp = null; S.gdpSrc = null;
+      S.simple.gdpKey = "";
+      if (S.gdpCountry && v) this.lookup(true);
+      this.gdpChanged();
+    },
+    /** World Bank WDI GDP in the statements' currency, shared with Analyst view. */
     lookup(force) {
       const st = S.simple, country = S.gdpCountry, year = svGdpYear(), series = svSeries();
-      if (!country) return;
+      if (!country || !year) return;
       const key = gdpKey(series, country, year);
       st.gdpTry = st.gdpTry || {};
-      if (!force && (S.gdp || st.gdpTry[key])) return;
+      if (S.gdpSrc && S.gdpSrc.kind === "wb" && gdpKey(S.gdpSrc.series, S.gdpSrc.country, S.gdpSrc.year) === key) return;
+      if (!force && st.gdpKey === key && st.gdpTry[key]) return;
       st.gdpTry[key] = { s: "busy" };
       st.gdpKey = key;
+      // Never retain a GDP from another country/year while a new figure is loading.
+      S.gdp = null; S.gdpSrc = null;
       const done = (o) => {
-        if (S.simple !== st) return; // the data changed meanwhile
+        if (S.simple !== st || st.gdpKey !== key || S.gdpCountry !== country || svGdpYear() !== year) return;
         st.gdpTry[key] = o;
-        if (st.gdpKey !== key) return; // another country was chosen meanwhile
-        if (o.s === "ok") { const r = o.res; S.gdp = r.value / SC; S.gdpSrc = r; S.gdpCountry = r.country; S.gdpYear = r.year; S.gdpSeries = r.series; }
-        else if (S.gdpSrc && S.gdpSrc.kind === "wb") { S.gdp = null; S.gdpSrc = null; }
+        if (o.s === "ok") {
+          const r = o.res;
+          S.gdp = r.value / SC; S.gdpSrc = r;
+          S.gdpCountry = r.country; S.gdpYear = r.year; S.gdpSeries = r.series;
+        } else { S.gdp = null; S.gdpSrc = null; }
         if (S.tab === "simple") this.gdpChanged();
       };
       gdpFetch(series, country, year).then((value) => {
@@ -281,51 +296,42 @@
         done(gdpCurrencyStatus(res.cur) === "mismatch" ? { s: "mismatch", res } : { s: "ok", res });
       }, () => done({ s: "fail" }));
     },
-    typedGdp() {
-      const U = this.U, t = U.typed.value.trim(), v = E.parseNumber(t);
-      U.typedErr.textContent = "";
-      if (!t) { if (S.gdpSrc && S.gdpSrc.kind === "manual") { S.gdp = null; S.gdpSrc = null; this.gdpChanged(); } return; }
-      if (!(Number.isFinite(v) && v > 0)) { U.typedErr.textContent = "Type GDP as a positive number."; return; }
-      S.gdp = (v * gdpUnitSize("billion")) / SC; S.gdpSrc = { kind: "manual" }; // as the Analyst field stores a typed GDP in billions
-      this.gdpChanged();
-    },
     gdpChanged() { this.renderGdp(); this.renderAnswer(); this.renderSizes(); this.renderAssume(); },
-    /** the GDP line (#sv-gdp) and, when the lookup cannot give a usable figure, one typed-GDP box */
+    /** Read-only GDP: no manual-entry path in Simple view. */
     renderGdp() {
       const U = this.U, st = S.simple, year = svGdpYear(), country = S.gdpCountry, src = S.gdpSrc;
       this.lookup(false);
       const tr = country ? (st.gdpTry || {})[gdpKey(svSeries(), country, year)] : null;
       const cname = svCountry(country)[1];
       const line = el("p", { id: "sv-gdp", class: "sv-gdp", "data-v": S.gdp ? S.gdp * SC : "" });
-      let typed = false;
-      if (S.gdp && src && src.kind === "wb") {
+      const key = gdpKey(svSeries(), country, year);
+      if (!country) {
+        put(line, el("span", { class: "muted" }, "Select a country and GDP year to load GDP automatically."));
+      } else if (S.gdp && src && src.kind === "wb" && gdpKey(src.series, src.country, src.year) === key) {
         const same = gdpCurrencyStatus(src.cur) === "match";
         put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ", `${svCountry(src.country)[1]}, ${src.year}: `,
-          el("b", { class: "num" }, same ? money(S.gdp, true) : `${gdpBig(src.value)} ${src.cur || ""}`), el("span", { class: "muted" }, " (World Bank)"),
-          same ? null : src.forced ? ` In ${gdpCurName(src.cur)}, not in the accounts' currency.` : ` Check that your accounts are in ${gdpCurName(src.cur)}.`);
-      } else if (S.gdp) {
-        put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ", el("b", { class: "num" }, money(S.gdp, true)), el("span", { class: "muted" }, " (typed in)"));
-        typed = true;
+          el("b", { class: "num" }, same ? money(S.gdp, true) : `${gdpBig(src.value)} ${src.cur || ""}`),
+          el("span", { class: "muted" }, " (World Bank WDI · automatically loaded)"),
+          same ? null : ` Check that your accounts are in ${gdpCurName(src.cur)}.`,
+          String(year) === String(last(S.years)) ? null : ` Note: GDP year differs from the latest financial statement year (${last(S.years)}).`);
       } else if (country && (!tr || tr.s === "busy")) {
         put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ", el("span", { class: "muted" }, `Looking up ${cname}, ${year}…`));
       } else if (country && tr) {
         const r = tr.res;
-        put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ",
-          tr.s === "none" ? `The World Bank has no GDP for ${cname} in ${year}. Type it below to see the share of GDP.`
-            : tr.s === "mismatch" ? `The World Bank's GDP for ${cname} is in ${gdpCurName(r.cur)}, your accounts are in ${CUR}. Type GDP in ${CUR} below.`
-            : "Couldn't reach the World Bank (no internet, or the site is down). Type GDP below to see the share of GDP.");
-        typed = true;
+        const msg = tr.s === "none" ? `World Bank GDP is unavailable for ${cname} in ${year}. Choose a different year.`
+          : tr.s === "mismatch" ? `World Bank GDP is in ${gdpCurName(r.cur)}, but financial statements use ${CUR}. The GDP share is not calculated to avoid mixing currencies.`
+          : "World Bank GDP lookup is unavailable. Re-select the country or year to retry.";
+        put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ", el("span", { class: "muted" }, msg));
       }
-      if (typed && document.activeElement !== U.typed) U.typed.value = src && src.kind === "manual" && S.gdp ? gdpNumber((S.gdp * SC) / gdpUnitSize("billion")) : "";
       put(U.gdpLine, line);
-      U.typedLbl.textContent = `GDP in ${year}, in billions of ${CUR || "the accounts' currency"}`;
-      U.typedBox.hidden = !typed;
     },
-    /** what to do to see the share of GDP */
     gdpHint() {
-      const tr = S.gdpCountry ? (S.simple.gdpTry || {})[gdpKey(svSeries(), S.gdpCountry, svGdpYear())] : null;
-      if (tr && tr.s === "busy") return "looking up GDP to show the share of GDP";
-      return tr || dataCountry() ? "type GDP above to see the share of GDP" : "choose a country to see the share of GDP";
+      if (!S.gdpCountry) return "choose a country to load GDP automatically";
+      const tr = (S.simple.gdpTry || {})[gdpKey(svSeries(), S.gdpCountry, svGdpYear())];
+      if (!tr || tr.s === "busy") return "looking up GDP to show the share of GDP";
+      if (tr.s === "mismatch") return "GDP and financial statement currencies do not match";
+      if (tr.s === "none") return "GDP is unavailable for this year; choose another GDP year";
+      return "GDP lookup is unavailable; re-select the country or year to retry";
     },
 
     /* ---------- 2. scenario ---------- */

@@ -1299,9 +1299,3 @@ body[data-tab="how"] { background: #f3f6f8; }
 /*__SIMPLE_CSS__*/
 
 
-/* Collapsible introductory description, below the four portfolio-summary cards. */
-.lp-about-fold { margin: 18px 0 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.lp-about-fold > summary { cursor: pointer; padding: 14px 18px; font-size: 15px; font-weight: 700; color: var(--heading); }
-.lp-about-fold > summary:hover { background: var(--surface-alt, rgba(120,145,170,.06)); }
-.lp-about-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
-.lp-about-fold .lp-intro { padding: 0 18px 16px; margin: 0; max-width: none; }

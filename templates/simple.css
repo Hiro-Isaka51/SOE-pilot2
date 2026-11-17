@@ -29,8 +29,9 @@ body[data-mode="simple"] #bandUpload { display: none; }
 .sv-data-act .btn { font-size: 13px; padding: 6px 14px; }
 .sv-gdp-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 22px; padding-left: 34px; }
 .sv-gdp-row:has(> .sv-gdp-sel[hidden]) { align-items: center; }
-.sv-gdp-sel .fld { min-width: 220px; }
+.sv-gdp-sel .fld, .sv-gdp-year-sel .fld { min-width: 180px; }
 .sv-gdp-sel select { min-width: 220px; }
+.sv-gdp-year-sel select { min-width: 110px; }
 .sv-gdp-box { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 18px; min-width: 0; flex: 1 1 280px; }
 .sv-gdp { margin: 0; font-size: 13px; color: var(--ink); padding-bottom: 5px; max-width: 70ch; }
 .sv-gdp:empty { display: none; }
@@ -201,7 +202,7 @@ body[data-mode="simple"] #bandUpload { display: none; }
 @media (max-width: 560px) {
   .sv { gap: 14px; }
   .sv-gdp-row, .sv-loaded, .sv-msg, .sv-data details.fold { padding-left: 0; margin-left: 0; }
-  .sv-gdp-sel, .sv-gdp-sel .fld, .sv-gdp-sel select { min-width: 0; width: 100%; }
+  .sv-gdp-sel, .sv-gdp-sel .fld, .sv-gdp-sel select, .sv-gdp-year-sel, .sv-gdp-year-sel .fld, .sv-gdp-year-sel select { min-width: 0; width: 100%; }
   .sv-cards { gap: 8px; }
   .sv-card { padding: 10px 11px; }
   .sv-card-total b { font-size: 17px; }
