@@ -1028,16 +1028,16 @@
       /* 3. what the tool finds in the data on screen: four questions with today's answers */
       H.qs = el("div", { class: "lp-qs" });
       root.replaceChildren(el("div", { class: "lp" },
-        el("h2", { class: "lp-title" }, "About this tool..."),
-        // the tool's purpose, method and limits, as written by the team (paragraph breaks added for reading)
-        el("div", { class: "lp-intro" },
-          el("p", {}, ...moreText(
-            "Governments often learn about the fiscal cost of a state-owned enterprise only when it asks for a bailout, builds up arrears, or calls on a guarantee. This tool helps ministries of finance, SOE monitoring units, and World Bank country teams spot those risks earlier. Using basic financial statements, it scores each SOE with the Altman Z″, a well-established measure of financial health calibrated for emerging markets, and ranks the portfolio by distress score to show which enterprises are most likely to need support from the budget. Alongside this distress score, the tool computes complementary financial indicators that provide additional context on liquidity, leverage, and operational performance. The Z″-score is then mapped to a shadow credit rating, which is used to derive an estimate of expected fiscal cost by combining the implied probability of default with sector-specific loss assumptions to express the potential government exposure as a share of GDP.",
-            "Users can also simulate how fiscal exposure changes under macroeconomic shocks including fuel price movements, exchange rate shifts, and revenue contractions, and assess risk across the portfolio as a whole. The tool does not capture every source of SOE-related fiscal risk, and pricing subsidies, uncompensated public service obligations, and quasi-fiscal deficits require additional analysis, but as a first-pass screening instrument built for environments where data is limited and capacity is stretched, it offers a practical starting point for governments that want to move from reactive crisis management to proactive fiscal risk monitoring."))),
         // load data on the left, what the tool finds on the right
         el("div", { class: "lp-split" },
           el("section", { class: "lp-sec", "aria-labelledby": "lp-h-load" }, el("h3", { class: "lp-h", id: "lp-h-load" }, "Load data"), drop, loaded, msg, data),
           el("section", { class: "lp-sec", "aria-labelledby": "lp-h-find" }, el("h3", { class: "lp-h", id: "lp-h-find" }, "What the tool finds in this data"), H.qs)),
+        el("details", { class: "lp-about-fold" },
+          el("summary", {}, "About this tool"),
+        el("div", { class: "lp-intro" },
+          el("p", {}, ...moreText(
+            "Governments often learn about the fiscal cost of a state-owned enterprise only when it asks for a bailout, builds up arrears, or calls on a guarantee. This tool helps ministries of finance, SOE monitoring units, and World Bank country teams spot those risks earlier. Using basic financial statements, it scores each SOE with the Altman Z″, a well-established measure of financial health calibrated for emerging markets, and ranks the portfolio by distress score to show which enterprises are most likely to need support from the budget. Alongside this distress score, the tool computes complementary financial indicators that provide additional context on liquidity, leverage, and operational performance. The Z″-score is then mapped to a shadow credit rating, which is used to derive an estimate of expected fiscal cost by combining the implied probability of default with sector-specific loss assumptions to express the potential government exposure as a share of GDP.",
+            "Users can also simulate how fiscal exposure changes under macroeconomic shocks including fuel price movements, exchange rate shifts, and revenue contractions, and assess risk across the portfolio as a whole. The tool does not capture every source of SOE-related fiscal risk, and pricing subsidies, uncompensated public service obligations, and quasi-fiscal deficits require additional analysis, but as a first-pass screening instrument built for environments where data is limited and capacity is stretched, it offers a practical starting point for governments that want to move from reactive crisis management to proactive fiscal risk monitoring.")))),
         // how the tool gets there, under the data so the upload box stays on the first screen
         el("section", { class: "lp-sec", "aria-labelledby": "lp-h-calc" }, el("h3", { class: "lp-h", id: "lp-h-calc" }, "What the tool calculates"), steps, scope),
         el("nav", { class: "lp-links", "aria-label": "More" }, go("how", "How it works, step by step"), go("report", "Report"), go("about", "About the tool and your data"))));
@@ -1380,7 +1380,7 @@
       if (yrs.length > 2) ctl.append(fSelect("From", yrs, st.from, (v) => { st.from = Math.min(v, st.to); this.render(); }, { num: true }), fSelect("To", yrs, st.to, (v) => { st.to = Math.max(v, st.from); this.render(); }, { num: true }));
       H.charts = {};
       const grid = el("div", { class: "grid3" });
-      ["X1", "X2", "X3", "X4", "Z_EM"].forEach((k) => {
+      ["Z_EM", "X1", "X2", "X3", "X4"].forEach((k) => {
         const chart = el("div", { class: "chart" });
         const c = el("div", { class: "card top" }, el("div", { class: "card-head", style: "margin-bottom:6px" }, el("div", {}, el("h3", {}, COMP_TITLES[k], info(CFG.GLOSSARY[GLOSS[k]] || "")))), chart);
         if (k === "Z_EM") c.insertBefore(legendRow([legendItem(LG.thrC, `Distress (${CFG.Z_DISTRESS_CUTOFF})`), legendItem(LG.thrW, `Safe threshold (${CFG.Z_SAFE_CUTOFF})`)]), chart);
