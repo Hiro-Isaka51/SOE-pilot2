@@ -88,23 +88,51 @@ body[data-mode="simple"] #bandUpload { display: none; }
 .sv-foot-fut { font-size: 15px; }
 .sv-tools { margin-top: 10px; justify-content: space-between; }
 
-/* 4. how sure */
-.sv-range-body { position: relative; display: grid; gap: 18px; min-height: 60px; }
-.sv-wait { margin: 0; font-size: 13px; color: var(--muted); }
-.sv-rrow { min-width: 0; }
-.sv-rtitle { font-size: 13.5px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
-.sv-rbar { position: relative; height: 54px; }
-.sv-rbar.stacked { height: 74px; }
-.sv-rspan { position: absolute; top: 27px; height: 14px; background: var(--accent); opacity: .55; border-radius: 7px; }
-.sv-rl { position: absolute; top: 25px; font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap; line-height: 18px; }
-.sv-rbar.stacked .sv-rl { top: 48px; }
-.sv-rmark { position: absolute; top: 20px; width: 3px; height: 28px; margin-left: -1.5px; background: var(--heading); border-radius: 2px; }
-.sv-rhead { position: absolute; top: 0; font-size: 12px; font-weight: 700; color: var(--heading); white-space: nowrap; line-height: 16px; }
-.sv-rhead.c { transform: translateX(-50%); }
-.sv-rhead.l { left: 0; }
-.sv-rhead.r { right: 0; }
-.sv-rnote { margin: 2px 0 0; font-size: 12px; color: var(--ink-2); max-width: 95ch; }
+/* 4. what if the shock is smaller or bigger (also used on the One-SOE page) */
+.sv-sz-empty { margin: 0; font-size: 13.5px; color: var(--ink-2); max-width: 80ch; }
+.sv-sz-lead { margin: 0 0 4px; }
+.sv-sz { display: grid; grid-template-columns: minmax(130px, 220px) minmax(220px, 1fr) 84px 104px minmax(120px, 200px); column-gap: 14px; margin-top: 6px; }
+.sv-sz.nogdp { grid-template-columns: minmax(130px, 220px) minmax(220px, 1fr) 84px minmax(120px, 200px); }
+.sv-sz-row { display: contents; }
+.sv-sz-row > * { min-width: 0; align-self: center; min-height: 44px; display: flex; align-items: center; }
+.sv-sz-lab { padding-block: 6px; flex-direction: column; align-items: flex-start !important; justify-content: center; gap: 1px; border-left: 4px solid transparent; padding-left: 10px; }
+.sv-sz-row.ans .sv-sz-lab { border-left-color: var(--accent-strong); }
+.sv-sz-name { font-size: 13.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; }
+.sv-sz-row.ans .sv-sz-name { font-weight: 700; color: var(--ink); }
+.sv-sz-tag { font-size: 11px; font-weight: 700; line-height: 1.5; padding: 0 7px; border-radius: 4px; background: var(--heading); color: var(--surface); white-space: nowrap; }
+.sv-sz-size { font-size: 12px; color: var(--ink-2); line-height: 1.35; }
+.sv-sz-track { position: relative; }
+.sv-sz-row > .sv-sz-track { align-self: stretch; } /* the no-shock line runs unbroken through tall rows */
+.sv-sz-seg { position: absolute; top: 50%; height: 14px; margin-top: -7px; }
+.sv-sz-base { background: var(--prev); }
+.sv-sz-add { background: var(--accent); border-radius: 0 4px 4px 0; }
+.sv-sz-add.ans { background: var(--accent-strong); }
+.sv-sz-base.end { border-radius: 0 4px 4px 0; }
+.sv-sz-ref { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--ink-2); margin-left: -.5px; z-index: 1; }
+.sv-sz-none > * { min-height: 0; }
+.sv-sz-head { min-height: 28px !important; align-items: flex-start; }
+.sv-sz-head .sv-sz-ref { top: 22px; }
+.sv-sz-reflab { position: absolute; top: 0; left: 0; padding-left: 7px; font-size: 12.5px; line-height: 20px; color: var(--ink-2); white-space: nowrap; }
+.sv-sz-reflab b { font-weight: 400; color: var(--ink); }
+.sv-sz-reflab span { font-weight: 600; }
+.sv-sz-reflab.flip { padding-left: 0; padding-right: 7px; transform: translateX(-100%); }
+.sv-sz-money { justify-content: flex-end; font-size: 13.5px; color: var(--ink); }
+.sv-sz-row.ans .sv-sz-money { font-weight: 700; }
+.sv-sz-gdp, .sv-sz-chg { font-size: 12.5px; color: var(--ink-2); line-height: 1.35; }
+.sv-sz-gdp { justify-content: flex-end; white-space: nowrap; }
+.sv-sz-legend { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 10px 0 0; font-size: 12px; color: var(--ink-2); }
+.sv-sz-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sv-sz-sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; }
+.sv-sz-legend .sv-sz-add { border-radius: 2px; }
+.sv-sz-note { margin-top: 8px; font-size: 12px; color: var(--ink-2); max-width: 95ch; }
+.sv-sz-note p { margin: 0 0 4px; }
 .sv-above { color: var(--ink); }
+.sv-asm-state { margin-top: 6px; color: var(--ink-2); }
+.sv-asm-state p { margin: 0 0 4px; }
+.sv-soe-state { margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+.sv-soe-state p { margin: 0 0 4px; }
+.sv-soe-state b { color: var(--ink); }
+.sv-asm-state b { color: var(--ink); }
 
 /* 5. assumptions */
 .sv-assume > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 15px; font-weight: 700; color: var(--heading); }
@@ -125,6 +153,8 @@ body[data-mode="simple"] #bandUpload { display: none; }
 .sv-links a { color: var(--accent-strong); }
 
 @media (max-width: 1080px) {
+  .sv-sz { grid-template-columns: 120px minmax(120px, 1fr) 72px 90px 140px; column-gap: 10px; }
+  .sv-sz.nogdp { grid-template-columns: 120px minmax(120px, 1fr) 72px 140px; }
   .sv-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sv-health { min-width: 150px; }
   .sv-warn { flex-direction: column; align-items: flex-start; gap: 3px; }
@@ -132,7 +162,19 @@ body[data-mode="simple"] #bandUpload { display: none; }
 }
 /* narrow screens: each SOE becomes a small block, so the costs are seen without scrolling sideways */
 @media (max-width: 640px) {
-  .sv-table, .sv-table tbody, .sv-table tfoot { display: block; }
+  .sv-sz, .sv-sz.nogdp { display: block; }
+  .sv-sz-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding-top: 12px; }
+  .sv-sz-row > * { min-height: 0; }
+  .sv-sz-lab { grid-column: 1; grid-row: 1; padding-block: 0; }
+  .sv-sz-money { grid-column: 2; grid-row: 1; align-self: start; }
+  .sv-sz-track { grid-column: 1 / -1; grid-row: 2; height: 30px; }
+  .sv-sz-gdp { grid-column: 1; grid-row: 3; justify-content: flex-start; }
+  .sv-sz-chg { grid-column: 1 / -1; grid-row: 3; justify-content: flex-end; text-align: right; }
+  .sv-sz-gdp + .sv-sz-chg { grid-column: 2; }
+  .sv-sz-none { display: block; padding-top: 0; }
+  .sv-sz-none .sv-sz-lab, .sv-sz-pad { display: none; }
+  .sv-sz-head { height: 34px; min-height: 34px !important; }
+    .sv-table, .sv-table tbody, .sv-table tfoot { display: block; }
   .sv-table thead { display: none; }
   .sv-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
   .sv-table td { border: 0; padding: 2px 0; min-width: 0; max-width: none; }
@@ -229,6 +271,7 @@ body[data-mode="simple"] #bandUpload { display: none; }
 .sv-sr-amt { text-align: right; font-weight: 700; color: var(--heading); font-size: 14px; }
 .sv-soe-range { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
 .sv-soe-range .sv-sub { margin-bottom: 8px; }
+.sv-soe-sizes .sv-h4 { margin-bottom: 4px; }
 
 /* what to do, links */
 .sv-lead { margin: 0 0 8px; font-size: 14px; }

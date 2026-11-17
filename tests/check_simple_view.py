@@ -4,7 +4,7 @@ the built SOE-Fiscal-Risk-Final.html opens in Simple view, its figures equal the
 technical label leaks into it, and the Analyst view is intact behind the mode switch.
 
 Seven groups of checks (Playwright, chromium, headless, file:// URL of the built file):
-  1 landing state              2 totals equal the Analyst view   3 range block brackets the headline
+  1 landing state              2 totals equal the Analyst view   3 sizes block follows the scenario
   4 banned labels              5 mode switch, Analyst view intact 6 upload with a Country column (GDP)
   7 one-SOE page
 
@@ -286,47 +286,56 @@ def t2_totals(browser):
 
 
 # ----------------------------------------------------------------------------------------------- 3
-def t3_range(browser):
+def t3_sizes(browser):
     for key, label in DATASETS:
         page = new_page(browser)
-        if not present(page, "#sv-scen", f"3 range ({label})"):
+        if not present(page, "#sv-scen", f"3 sizes ({label})"):
             page.context.close()
             return
         n = n_soes(app_data(page)["datasets"][key])
         if not load_via_simple(page, key, label, n):
             page.context.close()
             continue
+        gdp_raw = num(attr(page, "#sv-gdp", "data-v"))
         for k in SCENARIOS:
             btn = page.locator(f'#sv-scen button[data-scen="{k}"]')
             if btn.count() == 0:
-                fail(f"3 range ({label}/{k}): scenario card missing")
+                fail(f"3 sizes ({label}/{k}): scenario card missing")
                 continue
             btn.first.click()
             try:
-                page.wait_for_function("k => document.querySelector(`#sv-scen button[data-scen=${k}]`)"
-                                       ".getAttribute('aria-pressed') === 'true'", arg=k, timeout=SHORT)
+                page.wait_for_function("k => document.querySelector(`#sv-sizes`)?.getAttribute('data-scen') === k", arg=k, timeout=SHORT)
             except Exception:  # noqa: BLE001
-                fail(f"3 range ({label}/{k}): card not aria-pressed after click")
-            try:   # a stale ready flag is cleared at once; tolerate an implementation that swaps it in place
-                page.wait_for_function("document.querySelector('#sv-range')?.getAttribute('data-ready') !== '1'", timeout=1500)
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                page.wait_for_selector('#sv-range[data-ready="1"]', state="attached", timeout=60000)
-            except Exception:  # noqa: BLE001
-                fail(f"3 range ({label}/{k}): #sv-range[data-ready=1] not reached in 60 s")
+                fail(f"3 sizes ({label}/{k}): #sv-sizes[data-scen={k}] not reached")
                 continue
-            v = {name: num(attr(page, f'#sv-range [data-k="{name}"]', "data-v"))
-                 for name in ("head", "shock-lo", "shock-hi", "state-lo", "state-hi")}
+            if k == "none":
+                check(page.locator('#sv-sizes[data-empty="1"]').count() == 1, f"3 sizes ({label}/none): data-empty not set")
+                check(page.locator("#sv-sizes [data-level]").count() == 0, f"3 sizes ({label}/none): a figure is shown")
+                continue
+            check(page.locator('#sv-sizes[data-empty="1"]').count() == 0, f"3 sizes ({label}/{k}): data-empty set")
             fut = num(attr(page, '#sv-table [data-k="fut-total"]', "data-v"))
-            if not check(None not in v.values() and fut is not None, f"3 range ({label}/{k}): missing data-v {v}, fut-total {fut}"):
+            futg = num(attr(page, '#sv-table [data-k="fut-gdp"]', "data-v"))
+            v = {lv: num(attr(page, f'#sv-sizes [data-level="{lv}"]', "data-v")) for lv in ("none", "mild", "standard", "severe")}
+            if not check(None not in v.values() and fut is not None, f"3 sizes ({label}/{k}): missing data-v {v}, fut-total {fut}"):
                 continue
-            eps = 1e-9 * max(abs(v["head"]), 1)
-            check(v["shock-lo"] <= v["head"] + eps <= v["shock-hi"] + 2 * eps,
-                  f"3 range ({label}/{k}): shock range [{v['shock-lo']}, {v['shock-hi']}] does not bracket head {v['head']}")
-            check(v["state-lo"] <= v["head"] + eps <= v["state-hi"] + 2 * eps,
-                  f"3 range ({label}/{k}): state range [{v['state-lo']}, {v['state-hi']}] does not bracket head {v['head']}")
-            check(close(v["head"], fut), f"3 range ({label}/{k}): head {v['head']} != fut-total {fut}")
+            none_card = num(attr(page, '#sv-scen button[data-scen="none"] [data-k="total"]', "data-v"))
+            check(close(v["standard"], fut), f"3 sizes ({label}/{k}): standard {v['standard']} != fut-total {fut}")
+            check(close(v["none"], none_card), f"3 sizes ({label}/{k}): no-shock reference {v['none']} != none card {none_card}")
+            check(all(v[lv] > 0 for lv in ("mild", "standard", "severe")), f"3 sizes ({label}/{k}): a size is not positive {v}")
+            if futg is not None and fut:
+                horizon_gdp = fut / futg
+                for lv in ("none", "mild", "standard", "severe"):
+                    g = num(attr(page, f'#sv-sizes [data-level="{lv}"]', "data-gdp"))
+                    check(close(g, v[lv] / horizon_gdp, 1e-7), f"3 sizes ({label}/{k}/{lv}): data-gdp {g} != data-v / GDP at horizon")
+            else:
+                check(page.locator("#sv-sizes .sv-sz-gdp").count() == 0, f"3 sizes ({label}/{k}): % of GDP column shown without GDP")
+            page.evaluate("document.querySelector('#sv-assume').open = true")
+            lo = num(attr(page, '#sv-assume [data-k="state-lo"]', "data-v"))
+            hi = num(attr(page, '#sv-assume [data-k="state-hi"]', "data-v"))
+            if check(lo is not None and hi is not None, f"3 sizes ({label}/{k}): state-lo/hi missing"):
+                # The State's-share range must follow the chosen scenario, and for the built-in data it contains the answer
+                # (every sector's high share is above the share assumed; the low shares are below it for most of the cost).
+                check(0 < lo <= fut * (1 + 1e-9) and fut <= hi * (1 + 1e-9), f"3 sizes ({label}/{k}): fut-total {fut} outside the State's-share range [{lo}, {hi}]")
         page.context.close()
 
 
@@ -522,7 +531,7 @@ def main():
         return 1
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        for fn in (t1_landing, t2_totals, t3_range, t4_banned, t5_modes, t6_upload, t7_soe):
+        for fn in (t1_landing, t2_totals, t3_sizes, t4_banned, t5_modes, t6_upload, t7_soe):
             try:
                 fn(browser)
             except Exception as e:  # noqa: BLE001 - a broken test must not hide the others
@@ -535,7 +544,7 @@ def main():
         for f in FAILS:
             print("  -", f)
         return 1
-    print(f"OK: {CHECKS} Simple-view checks passed (landing, totals vs Analyst view, ranges, banned labels, modes, upload GDP, one-SOE page)")
+    print(f"OK: {CHECKS} Simple-view checks passed (landing, totals vs Analyst view, sizes, banned labels, modes, upload GDP, one-SOE page)")
     return 0
 
 

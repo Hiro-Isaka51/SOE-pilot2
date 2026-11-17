@@ -559,7 +559,6 @@ MC_DEFAULT_CORRELATIONS = {
     "fx|rate": 0.0, "fx|revenue": 0.0, "rate|revenue": 0.0,
 }
 MC_DEFAULT_SIMULATIONS = 1000
-SIMPLE_RANGE_DRAWS = 500  # draws behind the Simple view's range bars (a display setting, stated on the page; not in PARAMETER_REGISTER)
 MC_DEFAULT_FUEL_STD = 0.10
 MC_DEFAULT_FX_STD = 0.08
 MC_DEFAULT_CORRELATION = 0.30
