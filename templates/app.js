@@ -497,7 +497,7 @@
   /* =====================================================================
      state + data
      ===================================================================== */
-  const S = { tab: "home", sectorSel: new Set(), built: {} };
+  const S = { tab: "simple", sectorSel: new Set(), built: {} };
   const DATASETS = DATA.datasets || {};
   // report.py packs each dataset as {cols, data}; unpack to one object per row
   for (const k in DATASETS) { const d = DATASETS[k]; if (!d.rows && d.cols) d.rows = d.data.map((r) => Object.fromEntries(d.cols.map((c, i) => [c, r[i]]))); }
@@ -591,6 +591,7 @@
     const yrs = S.years, lastY = last(yrs);
     const firstName = S.names[0];
     const efcAll = latestOf(S.en).map((r) => [r.Entity, E.efcRow(r, M.lgd_pct).EFC]).sort((a, b) => (b[1] || 0) - (a[1] || 0));
+    S.simple = { scen: "none", soe: null, all: false, range: {}, open: {} };
     S.kpi = { view: "trend", from: yrs[0], to: lastY, soe: firstName, trend: {}, cmp: {}, period: "recent", year: lastY, avgFrom: yrs[0], avgTo: lastY, scCat: "headline", all: false };
     S.alt = { view: "components", soe: firstName, from: yrs[0], to: lastY, period: "recent", year: lastY, avgFrom: yrs[0], avgTo: lastY, all: false };
     S.efc = { year: lastY, mode: "single", lgd: M.lgd_pct ?? CFG.LGD_SLIDER_DEFAULT, per: {}, sens: efcAll.length ? efcAll[0][0] : firstName, basis: "total_liabilities", ead: CFG.EAD_SHARE_DEFAULT, all: false };
@@ -640,10 +641,16 @@
 
   /* ---------- tabs ---------- */
   const FILTER_TABS = new Set(["kpi", "altman", "efc", "warning"]);
+  const SIMPLE_TABS = new Set(["simple", "soe"]); // pages of the Simple view; they have no tab-bar button
   const pages = {};
   function showTab(id, force) {
     if (!pages[id]) id = "home";
     S.tab = id;
+    const simpleMode = SIMPLE_TABS.has(id);
+    document.body.dataset.mode = simpleMode ? "simple" : "analyst";
+    if (!simpleMode) S.lastAnalyst = id;
+    const ms = document.getElementById("modeSwitch");
+    if (ms) ms.textContent = simpleMode ? "Analyst view" : "Simple view";
     document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
     // Government Support and Technical notes are off the tab bar; their tab shows only while one of them is open
     document.querySelectorAll("#tabs li.tab-hidden").forEach((li) => { li.hidden = li.querySelector("button").dataset.tab !== id; });
@@ -663,6 +670,8 @@
     try { history.replaceState(null, "", "#view-" + id); } catch (e) { /* hash is optional */ }
   }
   document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); }));
+  const modeSw = document.getElementById("modeSwitch");
+  if (modeSw) modeSw.addEventListener("click", () => { showTab(SIMPLE_TABS.has(S.tab) ? (S.lastAnalyst || "home") : "simple"); window.scrollTo({ top: 0 }); });
   const bandUp = document.getElementById("bandUpload");
   if (bandUp) bandUp.addEventListener("click", () => {
     showTab("home"); window.scrollTo({ top: 0 });
@@ -1082,8 +1091,9 @@
       const bad = co.filter((r) => reqNum.some((c) => !ok(r[c]))).length;
       S.mapping = { report: mp.report };
       S.uploadNote = `✓ Loaded ${pl(uniq(co.map((r) => r.Entity)).length, "SOE")}, ${co.length} SOE-year rows from ${file.name}.` + (headerNote.trim() ? " " + headerNote.trim() : "") + (merged.meta && merged.meta.sheets.length ? ` Supplementary sheets: ${merged.meta.sheets.join(", ")}.` : "") + (merged.meta && merged.meta.conflicts.length ? ` ${merged.meta.conflicts.length} support value(s) need reconciliation.` : "") + (bad ? ` ${bad} row(s) have non-numeric or missing required values — check the data preview below.` : "");
+      const fromSimple = SIMPLE_TABS.has(S.tab); // an upload made in the Simple view stays there
       loadDataset(merged.rows, file.name, false, "upload");
-      showTab("home", true);
+      showTab(fromSimple ? "simple" : "home", true);
     };
     const fail = (e) => msg.replaceChildren(el("div", { class: "alert-box warn", style: "margin-top:10px" }, `Couldn't read that file: ${e}`));
     const take = (rows, how) => { const f = E.frameFromRows(rows); headerNote = (how ? how + " " : "") + (f.header ? `Header found on row ${f.header + 1}; the ${pl(f.header, "row")} above it skipped.` : ""); done(f.records); };
@@ -1540,6 +1550,20 @@
     return hit ? hit[0] : "";
   }
   const gdpKey = (series, country, year) => `${series}|${country}|${year}`;
+  /** one World Bank GDP figure (year as a string) in full currency units, or null when it has none; cached in
+      GDP_CACHE; rejects when the API cannot be reached. Used by the GDP field below and by the Simple view. */
+  async function gdpFetch(series, country, year) {
+    const key = gdpKey(series, country, year);
+    if (GDP_CACHE.has(key)) return GDP_CACHE.get(key);
+    const url = `https://api.worldbank.org/v2/country/${encodeURIComponent(country)}/indicator/${GDP_SERIES[series].code}?date=${encodeURIComponent(year)}&format=json&source=2`;
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw Error("World Bank API status " + response.status);
+    const data = await response.json();
+    const row = Array.isArray(data) && Array.isArray(data[1]) ? data[1].find((r) => r && String(r.date) === year && Number.isFinite(r.value)) : null;
+    const value = row ? Number(row.value) : null;
+    GDP_CACHE.set(key, value);
+    return value;
+  }
   function gdpField(onChange) {
     const valId = nid("gdp"), countryId = nid("gdp-country"), yearId = nid("gdp-year"), unitId = nid("gdp-units");
     const stUnits = (S.rows.find((r) => r.Units) || {}).Units;
@@ -1631,14 +1655,8 @@
       let value = GDP_CACHE.get(key);
       if (value === undefined) {
         renderStatus(["busy", `Looking up ${countryName(country)} GDP for ${year}…`]);
-        const url = `https://api.worldbank.org/v2/country/${encodeURIComponent(country)}/indicator/${GDP_SERIES[series].code}?date=${encodeURIComponent(year)}&format=json&source=2`;
         try {
-          const response = await fetch(url, { headers: { Accept: "application/json" } });
-          if (!response.ok) throw Error("World Bank API status " + response.status);
-          const data = await response.json();
-          const row = Array.isArray(data) && Array.isArray(data[1]) ? data[1].find((r) => r && String(r.date) === year && Number.isFinite(r.value)) : null;
-          value = row ? Number(row.value) : null;
-          GDP_CACHE.set(key, value);
+          value = await gdpFetch(series, country, year);
         } catch (err) {
           if (req !== fetchId || !box.isConnected) return;
           clearLooked(); showValue();
@@ -3417,6 +3435,8 @@
   };
 
   /*__EXPLAINER_JS__*/
+
+  /*__SIMPLE_JS__*/
 
   /* =====================================================================
      optional upload-only fiscal-support additions

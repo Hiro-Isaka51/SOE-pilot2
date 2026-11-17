@@ -18,6 +18,9 @@ How it fits together
                        narrative.py, utils/summary.py, the GRE uplift and
                        schema.py's column matching
   templates/app.js     the tabs, controls and SVG charts
+  templates/simple.js  the default "Simple view" (overview and one-SOE pages), inlined into
+                       app.js at /*__SIMPLE_JS__*/; templates/simple.css is inlined at the
+                       end of app.css at /*__SIMPLE_CSS__*/
   templates/explainer.js  the "How it works" tab (non-specialist guide and shock
                        transmission), inlined into app.js at /*__EXPLAINER_JS__*/
 This module embeds the statement rows and every config.py number the engine
@@ -81,7 +84,7 @@ def config_payload() -> dict:
         "SINGLE_DRIVER_SHARE_THRESHOLD", "ZONES", "Z_DISTRESS_CUTOFF", "Z_SAFE_CUTOFF", "Z_RATING_TABLE", "PD_BY_ZONE",
         "LGD_SLIDER_MIN", "LGD_SLIDER_MAX", "LGD_SLIDER_DEFAULT", "SECTOR_RECOVERY_DATA", "KPI_THRESHOLDS",
         "KPI_CATEGORIES", "CATEGORY_LABELS", "CATEGORY_ORDER", "SECTOR_FUEL_COST_SHARE", "SECTOR_REVENUE_VOLATILITY",
-        "DEFAULT_SHOCK_PARAMS", "MC_DEFAULT_SIMULATIONS", "MC_DEFAULT_FUEL_STD", "MC_DEFAULT_FX_STD",
+        "DEFAULT_SHOCK_PARAMS", "MC_DEFAULT_SIMULATIONS", "SIMPLE_RANGE_DRAWS", "MC_DEFAULT_FUEL_STD", "MC_DEFAULT_FX_STD",
         "MC_DEFAULT_CORRELATION", "MC_HORIZON_YEARS", "DEFAULT_GDP_GROWTH", "REQUIRED_COLUMNS", "OPTIONAL_SHOCK_COLUMNS",
         "GLOSSARY", "RATING_SCALE_ASC", "SOVEREIGN_OUTLOOK_OPTIONS", "ROLE_LEVELS", "ROLE_SCORE", "ROLE_CRITERIA",
         "LINK_LEVELS", "LINK_SCORE", "LINK_CRITERIA", "LIKELIHOOD_TIERS_ASC", "LIKELIHOOD_UPLIFT",
@@ -190,7 +193,11 @@ def render_html(app: dict, standalone: bool = True) -> str:
     extension_js = (TEMPLATE_DIR / "support_additions.js").read_text(encoding="utf-8")
     chart_export_js = (TEMPLATE_DIR / "chart_export.js").read_text(encoding="utf-8")
     explainer_js = (TEMPLATE_DIR / "explainer.js").read_text(encoding="utf-8")
+    simple_js = (TEMPLATE_DIR / "simple.js").read_text(encoding="utf-8")
+    simple_css = (TEMPLATE_DIR / "simple.css").read_text(encoding="utf-8")
+    css = css.replace("/*__SIMPLE_CSS__*/", simple_css)
     app_js = app_js.replace("/*__EXPLAINER_JS__*/", explainer_js)
+    app_js = app_js.replace("/*__SIMPLE_JS__*/", simple_js)
     app_js = app_js.replace("/*__SUPPORT_EXTENSION_JS__*/", extension_js)
     title = html_lib.escape(app["data"]["meta"]["title"])
     body = (

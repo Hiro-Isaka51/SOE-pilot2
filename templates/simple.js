@@ -1,0 +1,661 @@
+  /* =====================================================================
+     SIMPLE VIEW — the default, plain-language view (overview + one SOE)
+     Inlined into app.js at the SIMPLE_JS marker, INSIDE the app's closure: it uses the helpers
+     defined above (el, pageHead, stressAll, CHANNELS, E, CFG, S, showTab ...). No IIFE, no imports.
+     See docs/DESIGN-simple-view.md for the rules and the DOM contract.
+     ===================================================================== */
+
+  /* ===== SIMPLE VIEW · A · data layer ===== */
+  // Every figure in the Simple view comes from the functions and state the Analyst view already uses
+  // (standardStress, CHANNELS, evalTriggers, E.efcRow, S.efc.*, S.gdp, S.growth), so it cannot disagree with
+  // Home, Report or Early Warning. Nothing is typed in here: shock sizes and spreads are read from CFG.
+  const SV = {};
+  SV.H = () => CFG.MC_HORIZON_YEARS;
+  SV.D = () => CFG.DEFAULT_SHOCK_PARAMS.shock_duration_years;
+  const svPts = (bps) => fmt(bps / 100, 1); // basis points → percentage points
+  /** plain name and size line of each scenario; sizes are formatted from the magnitudes, never typed */
+  SV.COPY = {
+    none: ["No shock", () => `the accounts rolled forward ${SV.H()} years, nothing going wrong`],
+    combined: ["All six at once", () => "the standard stress: every shock below, together"],
+    fuel: ["Fuel price rises", (m) => `by ${fmt(m.fuel_shock_pct * 100, 0)}%`],
+    fx: ["Currency falls", (m) => `by ${fmt(m.fx_shock_pct * 100, 0)}%`],
+    rate: ["Interest rates rise", (m) => `by ${svPts(m.rate_shock_bps)} percentage points`],
+    revenue: ["Revenue falls", (m) => { const k = Math.abs(m.revenue_shock_std_devs); return k === 1 ? "as in a bad year of each SOE's own record" : `${fmt(k, 1)} times a bad year of each SOE's own record`; }],
+    refi: ["Refinancing costs more", (m) => `${svPts(m.refinancing_spread_bps)} percentage points more on debt coming due`],
+    arrears: ["The State pays late", (m) => `unpaid bills worth ${fmt(m.arrears_pct_of_revenue * 100, 0)}% of revenue a year`],
+  };
+  /** "none" plus the Report's stress channels (CHANNELS), in the Report's order */
+  SV.scenarios = () => [["none", "No shock", ZERO_MAG], ...CHANNELS()].map(([key, label, mags]) => {
+    const c = SV.COPY[key] || [label, () => ""];
+    return { key, mags, name: c[0], size: c[1](mags) };
+  });
+  /** the settings the results depend on; when one changes, cached runs and ranges are dropped */
+  SV.sig = () => [S.efc.lgd, S.efc.ead, S.efc.basis, S.efc.mode, JSON.stringify(S.efc.per || {}), S.gdp || "", S.growth].join("|");
+  SV.rangeSig = () => [S.efc.lgd, S.efc.ead].join("|"); // the ranges do not depend on GDP or on the cost-now settings
+  SV.cache = () => {
+    const c = S.simple;
+    if (c.sig !== SV.sig()) { c.sig = SV.sig(); c.runs = {}; c.warn = null; }
+    if (c.rsig !== SV.rangeSig()) { c.rsig = SV.rangeSig(); c.range = {}; }
+    return c;
+  };
+  /** loss share behind "cost now": as the Expected Fiscal Cost tab and the Report apply it */
+  SV.lgdNow = (r) => (S.efc.mode === "per" ? S.efc.per[r.Entity] ?? S.efc.lgd : S.efc.lgd);
+  /** every SOE under one scenario: cost now (latest accounts) and cost at the horizon, largest first */
+  SV.run = (key) => {
+    const c = SV.cache();
+    if (c.runs[key]) return c.runs[key];
+    const all = SV.scenarios(), sc = all.find((s) => s.key === key) || all[0];
+    const res = standardStress(allRows(), sc.mags); // the same call as Home, Report and Early Warning
+    const items = res.map((x) => {
+      const f = last(x.str);
+      return { r: x.row, name: x.row.Entity, now: E.efcRow(x.row, SV.lgdNow(x.row), S.efc.ead, S.efc.basis).EFC, fut: f.EFC,
+        zoneNow: x.row.Zone, zoneFut: f.Zone, drop: x.drop, x };
+    }).sort((a, b) => (b.fut || 0) - (a.fut || 0) || String(a.name).localeCompare(String(b.name)));
+    const years = uniq(res.map((x) => last(x.str)["Calendar Year"])), f0 = res.length ? last(res[0].str) : null;
+    const out = { key: sc.key, name: sc.name, size: sc.size, mags: sc.mags, H: SV.H(), D: SV.D(), items,
+      year: years.length === 1 ? years[0] : null, // SOEs whose latest accounts differ end in different years
+      gdpH: f0 && ok(f0.GDP) ? f0.GDP : null,
+      nowTotal: sum(items.map((i) => i.now)), futTotal: sum(items.map((i) => i.fut)) };
+    out.nowGdp = S.gdp ? out.nowTotal / S.gdp : null;
+    out.futGdp = out.gdpH ? out.futTotal / out.gdpH : null;
+    return (c.runs[key] = out);
+  };
+  /** portfolio cost at the horizon under each scenario, for the scenario cards */
+  SV.totals = () => Object.fromEntries(SV.scenarios().map((s) => [s.key, SV.run(s.key).futTotal]));
+  /** low and high share of the loss the State bears for a sector: the ends of the reference table the
+      Expected Fiscal Cost tab shows (E.recoveryScenarios) */
+  SV.stateShare = (sector) => { const sc = E.recoveryScenarios(sector); return [sc[0][1], sc[sc.length - 1][1]]; };
+  /** How sure is the number? Two ranges around the cost at the horizon, for the portfolio and for each SOE.
+      shock: the engine's simulated shock paths (fuel price and currency vary around the scenario with the default
+        spreads; same seed for every SOE, so draw i is one future for the whole portfolio), re-priced with
+        E.costPath and the scenario's own parameters, i.e. with the same chance-of-distress method as the headline.
+        The Monte Carlo tab prices the same paths with a smooth curve, which sits well above the headline.
+      state: the same cost with each SOE's loss share at its sector's low and high reference figures.
+      Runs in slices after the page has painted; done(result) is called once, unless the data, the settings or
+      the scenario changed meanwhile. */
+  SV.range = (key, done) => {
+    const c = SV.cache();
+    if (c.range[key]) { done(c.range[key]); return; }
+    const run = SV.run(key), n = CFG.SIMPLE_RANGE_DRAWS || 500, lgd = S.efc.lgd, ead = S.efc.ead, sig = c.rsig;
+    const token = (c.token = (c.token || 0) + 1), tot = new Array(n).fill(0), by = {}, items = run.items;
+    const corr = Object.assign({}, CFG.MC_DEFAULT_CORRELATIONS, { "fuel|fx": CFG.MC_DEFAULT_CORRELATION });
+    let i = 0;
+    const slice = () => {
+      if (S.simple !== c || c.token !== token || c.rsig !== sig) return;
+      const t0 = Date.now();
+      while (i < items.length && Date.now() - t0 < 40) {
+        const it = items[i++], p = it.x.params;
+        const sims = E.monteCarlo(it.r, Object.assign({}, p, { mc_pd_method: "rating_smooth" }), { n, fuelSd: CFG.MC_DEFAULT_FUEL_STD, fxSd: CFG.MC_DEFAULT_FX_STD,
+          rho: CFG.MC_DEFAULT_CORRELATION, rateSd: CFG.MC_DEFAULT_RATE_STD_BPS, revSd: CFG.MC_DEFAULT_REVENUE_STD_SD, correlations: corr, H: run.H, lgd, gdp: null, seed: 42, eadShare: ead });
+        const v = sims.map((s) => last(E.costPath(s.path, lgd, null, ead, p)).EFC || 0);
+        v.forEach((e, k) => { tot[k] += e; });
+        const [lo, hi] = SV.stateShare(it.r.Sector), k = lgd / 100;
+        by[it.name] = { head: it.fut, shock: [E.quantile(v, 0.05), E.quantile(v, 0.95)], state: [(it.fut * lo) / k, (it.fut * hi) / k], share: [lo, hi] };
+      }
+      if (i < items.length) { setTimeout(slice, 0); return; }
+      const out = { key, head: run.futTotal, n, share: lgd / 100, by,
+        shock: [E.quantile(tot, 0.05), E.quantile(tot, 0.95)],
+        state: [sum(items.map((it) => by[it.name].state[0])), sum(items.map((it) => by[it.name].state[1]))],
+        // SOEs whose sector's low figure is above the share used for the headline (their own range starts above it)
+        above: items.filter((it) => by[it.name].share[0] > lgd / 100).map((it) => it.name) };
+      c.range[key] = out;
+      done(out);
+    };
+    setTimeout(slice, 0);
+  };
+  /** warnings as the Early Warning tab evaluates them: latest accounts, with the standard stress for the stress rule */
+  SV.warnings = () => {
+    const c = SV.cache();
+    if (c.warn) return c.warn;
+    const rows = latestOf(allRows()), stress = Object.fromEntries(SV.run("combined").items.map((i) => [i.name, i.x]));
+    return (c.warn = evalTriggers(rows, stress));
+  };
+  /** SOEs for which at least one exposure share is a default, not a figure from their own file */
+  SV.exposureDefaults = () => {
+    const names = ["fuel_cost_share", "fx_cost_share", "fx_revenue_share", "fx_debt_share", "floating_debt_share", "near_term_maturity_share"];
+    const rows = latestOf(allRows());
+    return { n: rows.length, k: rows.filter((r) => { const e = E.soeExposures(r); return names.some((nm) => e[nm] && !/^(Observed|Derived)/.test(e[nm][1])); }).length };
+  };
+  SV.defaults = () => ({ lgd: M.lgd_pct ?? CFG.LGD_SLIDER_DEFAULT, ead: CFG.EAD_SHARE_DEFAULT, basis: "total_liabilities", mode: "single", growth: M.gdp_growth ?? CFG.DEFAULT_GDP_GROWTH });
+  /** the read-only list under "Assumptions behind these numbers"; changed = differs from the tool's default */
+  SV.assumptions = () => {
+    const d = SV.defaults(), m = STD_MAG, ex = SV.exposureDefaults(), pc = (v) => fmt(v * 100, 0) + "%";
+    return [
+      { label: "Share of the loss the State bears", changed: S.efc.lgd !== d.lgd || S.efc.mode !== d.mode,
+        value: S.efc.mode === "per" ? `set SOE by SOE for the cost now; ${fmt(S.efc.lgd, 0)}% for the scenarios` : `${fmt(S.efc.lgd, 0)}%, the same for every SOE` },
+      { label: "Debt at stake", changed: S.efc.ead !== d.ead || S.efc.basis !== d.basis,
+        value: `${pc(S.efc.ead)} of total liabilities` + (S.efc.basis === "guaranteed_debt" ? "; for the cost now, government-guaranteed debt where the file reports it" : "") },
+      { label: "Years projected ahead", changed: false, value: `${SV.H()}; each shock lasts ${SV.D()} years` },
+      { label: "Chance of distress", changed: false, value: "read from the indicative rating that goes with the distress score" },
+      { label: "Shock sizes", changed: false, value: ["fuel", "fx", "rate", "refi", "revenue", "arrears"].map((k) => `${SV.COPY[k][0]} (${SV.COPY[k][1](m)})`).join("; ") },
+      { label: "Exposure to each shock", changed: false, value: `from the SOE's own file where it has the figures, otherwise a default (${ex.k} of ${ex.n} SOEs use at least one default)` },
+      { label: "Growth of GDP", changed: S.growth !== d.growth, value: `${fmt(S.growth * 100, 1)}% a year, for the share of GDP in later years` },
+    ];
+  };
+  SV.changed = () => SV.assumptions().filter((a) => a.changed).length;
+
+  /* ===== SIMPLE VIEW · B · overview page ===== */
+  // Reads top to bottom: your data → pick a scenario → the answer → how sure it is. Every figure comes from SV
+  // (section A). GDP reuses the Analyst routine (gdpFetch, gdpCurrencyStatus) and is stored in S.gdp / S.gdpSrc exactly
+  // as the Analyst GDP field stores it, so both views show the same GDP.
+  const svCountry = (c) => GDP_COUNTRIES.find((x) => x[0] === c) || [c, c, null];
+  const svBy = (run) => (run.year ? `by ${run.year}` : `in ${run.H} years`);
+  const svNum = (v) => v !== null && v !== undefined && ok(v);
+  /** the World Bank series in the statements' currency, as the Analyst GDP field picks it by default */
+  const svSeries = () => (stmtCurrency() === "USD" ? "CD" : "CN");
+  const svGdpYear = () => String(last(S.years));
+  /** a section heading with its step number */
+  const svHead = (n, id, title, sub) => el("div", { class: "sv-head" },
+    n ? el("span", { class: "sv-n num", "aria-hidden": "true" }, String(n)) : null,
+    el("div", {}, el("h3", { id }, title), sub ? el("p", { class: "sv-sub" }, sub) : null));
+  /** opens the Analyst view where the reader left it, as the header's mode button does */
+  const svAnalyst = (label) => el("a", { href: "#view-home", onclick: (e) => { e.preventDefault(); showTab(S.lastAnalyst || "home"); window.scrollTo({ top: 0 }); } }, label);
+  const svChange = (v, ref, more, less, same) => {
+    const d = ref > 0 ? v / ref - 1 : NaN;
+    if (!ok(d)) return "";
+    if (Math.abs(d) < 0.005) return same;
+    return `${fmt(Math.abs(d) * 100, 0)}% ${d > 0 ? more : less}`;
+  };
+
+  pages.simple = {
+    build(root) {
+      const U = (this.U = {});
+      // 1. your data
+      U.file = el("input", { type: "file", id: "sv-file", accept: ".csv,.xlsx,.xls,.txt", hidden: true, "aria-label": "Upload SOE financial statements, CSV or Excel" });
+      U.msg = el("div", { class: "lp-msg sv-msg" });
+      U.file.addEventListener("change", () => { const f = U.file.files[0]; if (f) readUpload(f, U.msg); U.file.value = ""; });
+      const tplLabel = canDownload ? "Download the template" : "Copy the template";
+      const tpl = el("button", { type: "button", class: "sv-link" }, tplLabel);
+      tpl.addEventListener("click", async () => { // the same CSV as Home's "Template (CSV)"
+        if (canDownload) { download("soe_tool_template.csv", templateCSV()); return; }
+        try { await navigator.clipboard.writeText(templateCSV()); tpl.textContent = "Copied"; setTimeout(() => (tpl.textContent = tplLabel), 1500); } catch (e) { showTab("about"); }
+      });
+      U.summary = el("p", { id: "sv-summary", class: "sv-summary" });
+      U.gdpSel = el("div", { class: "sv-gdp-sel" });
+      U.gdp = el("div", { class: "sv-gdp-box" });
+      U.typed = el("input", { type: "text", inputmode: "decimal", id: "sv-gdp-typed", autocomplete: "off" });
+      U.typedErr = el("small", { class: "sv-gdp-err", role: "alert" });
+      U.typed.addEventListener("change", () => this.typedGdp());
+      U.typedLbl = el("label", { for: "sv-gdp-typed" });
+      U.gdpLine = el("div", { class: "sv-gdp-line" });
+      U.typedBox = el("div", { class: "fld sv-gdp-typed", hidden: true }, U.typedLbl, U.typed, U.typedErr); // kept in place so it keeps focus
+      U.gdp.append(U.gdpLine, U.typedBox);
+      U.loaded = el("div", { class: "sv-loaded" });
+      U.examples = el("div");
+      const data = el("section", { id: "sv-data", class: "card sv-sec sv-data", "aria-labelledby": "sv-h-data" },
+        el("div", { class: "sv-data-top" },
+          el("div", { class: "sv-data-what" }, svHead(1, "sv-h-data", "Your data"), U.summary),
+          el("div", { class: "sv-data-act" }, el("button", { type: "button", class: "btn primary", onclick: () => U.file.click() }, "Upload your file"), tpl, U.file)),
+        el("div", { class: "sv-gdp-row" }, U.gdpSel, U.gdp),
+        U.loaded, U.msg, U.examples);
+      data.addEventListener("dragover", (e) => { e.preventDefault(); data.classList.add("over"); });
+      data.addEventListener("dragleave", (e) => { if (!data.contains(e.relatedTarget)) data.classList.remove("over"); });
+      data.addEventListener("drop", (e) => { e.preventDefault(); data.classList.remove("over"); if (e.dataTransfer.files[0]) readUpload(e.dataTransfer.files[0], U.msg); });
+      // 2. scenario
+      U.scen = el("div", { id: "sv-scen", class: "sv-cards", role: "group", "aria-label": "Scenario" });
+      U.scenLine = el("p", { class: "sv-line" });
+      const scen = el("section", { class: "sv-sec sv-scen", "aria-labelledby": "sv-h-scen" },
+        svHead(2, "sv-h-scen", "Scenario", "Pick what could go wrong. Each card shows what your SOEs could cost the budget under it."), U.scen, U.scenLine);
+      // 3. answer
+      U.answer = el("div", { class: "sv-answer", "aria-live": "polite" });
+      U.hint = el("p", { class: "sv-hint" });
+      U.table = el("div", { class: "tbl-wrap sv-tbl" });
+      U.tools = el("div", { class: "btn-row sv-tools" });
+      const ans = el("section", { class: "card sv-sec sv-ans", "aria-labelledby": "sv-h-ans" }, svHead(3, "sv-h-ans", "Answer"), U.answer, U.hint, U.table, U.tools);
+      // 4. how sure
+      U.rangeBody = el("div", { class: "sv-range-body" });
+      U.range = el("section", { id: "sv-range", class: "card sv-sec", "data-ready": "0", "aria-busy": "true", "aria-labelledby": "sv-h-range" },
+        svHead(4, "sv-h-range", "How sure is this number?", "Two things the answer depends on that nobody knows for sure. Each bar shows how far the total could move; the mark is the answer above."), U.rangeBody);
+      // 5. assumptions, 6. links
+      U.assume = el("div");
+      const links = el("nav", { class: "sv-links", "aria-label": "More" }, go("how", "How this works"), svAnalyst("Analyst view"));
+      root.replaceChildren(el("div", { class: "sv" },
+        pageHead("Simple view", "What could your SOEs cost the budget?", "Load the accounts, pick a scenario, read the answer. A first screen, not a forecast."),
+        data, scen, ans, U.range, U.assume, links));
+    },
+    render() {
+      this.renderData();
+      this.renderScen();
+      this.renderAnswer();
+      this.renderRange();
+      this.renderAssume();
+    },
+
+    /* ---------- 1. your data ---------- */
+    renderData() {
+      const U = this.U, yrs = S.years.length > 1 ? `${S.years[0]}–${last(S.years)}` : String(S.years[0] ?? "");
+      put(U.summary, el("b", {}, S.label || "Loaded data"), el("span", { class: "sv-facts" }, [pl(S.names.length, "SOE"), yrs, CUR].filter(Boolean).join(" · ")));
+      // after an upload: Home's confirmation line and its column-mapping fold
+      put(U.loaded, S.key === "upload" && S.uploadNote ? el("p", { class: "lp-loaded" }, S.uploadNote) : null, S.mapping ? mappingDetails(S.mapping) : null);
+      // the built-in datasets, under the labels Home uses
+      const copyOf = DATASETS.report ? ["sample", "demo", "long"].find((k) => DATASETS[k] && DATASETS[k].label === DATASETS.report.label) : null;
+      const active = S.key === "report" && copyOf ? copyOf : S.key;
+      const ds = (key, label, sub) => DATASETS[key] ? el("button", { type: "button", class: "chip sv-ds", "aria-pressed": String(active === key),
+        onclick: () => loadDataset(DATASETS[key].rows, DATASETS[key].label, DATASETS[key].example, key) }, label, el("small", {}, sub)) : null;
+      put(U.examples, fold(S.simple.open, "examples", "Try example data", [el("div", { class: "sv-ex" },
+        DATASETS.report && !copyOf ? ds("report", "Report data", DATASETS.report.label) : null,
+        ds("sample", "Example", "SOE A and B, 2020–2024"), ds("demo", "Demo portfolio", "8 SOEs in 7 sectors"), ds("long", "Long panel", "30 SOEs, 20 years"))]));
+      this.renderCountry();
+      this.renderGdp();
+    },
+    /** one country select, only when the data do not name the country */
+    renderCountry() {
+      const U = this.U, dc = dataCountry();
+      if (dc && !S.gdpCountry) S.gdpCountry = dc; // as the Analyst GDP field does with a Country column
+      U.gdpSel.hidden = !!dc;
+      if (dc) { put(U.gdpSel); return; }
+      const opts = [["", "Select a country…"], ...GDP_COUNTRIES.slice().sort((a, b) => a[1].localeCompare(b[1])).map(([c, n]) => [c, n])];
+      put(U.gdpSel, fSelect("Country (for the share of GDP)", opts, S.gdpCountry || "", (v) => this.pickCountry(v), { id: "sv-country" }));
+    },
+    pickCountry(v) {
+      S.gdpCountry = v;
+      if (S.gdpSrc && S.gdpSrc.kind === "wb" && S.gdpSrc.country !== v) { S.gdp = null; S.gdpSrc = null; }
+      if (v) this.lookup(true);
+      this.gdpChanged();
+    },
+    /** World Bank GDP for the latest year in the data, in the statements' currency; stored as the Analyst field stores it */
+    lookup(force) {
+      const st = S.simple, country = S.gdpCountry, year = svGdpYear(), series = svSeries();
+      if (!country) return;
+      const key = gdpKey(series, country, year);
+      st.gdpTry = st.gdpTry || {};
+      if (!force && (S.gdp || st.gdpTry[key])) return;
+      st.gdpTry[key] = { s: "busy" };
+      st.gdpKey = key;
+      const done = (o) => {
+        if (S.simple !== st) return; // the data changed meanwhile
+        st.gdpTry[key] = o;
+        if (st.gdpKey !== key) return; // another country was chosen meanwhile
+        if (o.s === "ok") { const r = o.res; S.gdp = r.value / SC; S.gdpSrc = r; S.gdpCountry = r.country; S.gdpYear = r.year; S.gdpSeries = r.series; }
+        else if (S.gdpSrc && S.gdpSrc.kind === "wb") { S.gdp = null; S.gdpSrc = null; }
+        if (S.tab === "simple") this.gdpChanged();
+      };
+      gdpFetch(series, country, year).then((value) => {
+        if (!(value > 0)) { done({ s: "none" }); return; }
+        const res = { kind: "wb", series, country, year, value, cur: series === "CD" ? "USD" : svCountry(country)[2] || null };
+        done(gdpCurrencyStatus(res.cur) === "mismatch" ? { s: "mismatch", res } : { s: "ok", res });
+      }, () => done({ s: "fail" }));
+    },
+    typedGdp() {
+      const U = this.U, t = U.typed.value.trim(), v = E.parseNumber(t);
+      U.typedErr.textContent = "";
+      if (!t) { if (S.gdpSrc && S.gdpSrc.kind === "manual") { S.gdp = null; S.gdpSrc = null; this.gdpChanged(); } return; }
+      if (!(Number.isFinite(v) && v > 0)) { U.typedErr.textContent = "Type GDP as a positive number."; return; }
+      S.gdp = (v * gdpUnitSize("billion")) / SC; S.gdpSrc = { kind: "manual" }; // as the Analyst field stores a typed GDP in billions
+      this.gdpChanged();
+    },
+    gdpChanged() { this.renderGdp(); this.renderAnswer(); this.renderRange(); },
+    /** the GDP line (#sv-gdp) and, when the lookup cannot give a usable figure, one typed-GDP box */
+    renderGdp() {
+      const U = this.U, st = S.simple, year = svGdpYear(), country = S.gdpCountry, src = S.gdpSrc;
+      this.lookup(false);
+      const tr = country ? (st.gdpTry || {})[gdpKey(svSeries(), country, year)] : null;
+      const cname = svCountry(country)[1];
+      const line = el("p", { id: "sv-gdp", class: "sv-gdp", "data-v": S.gdp ? S.gdp * SC : "" });
+      let typed = false;
+      if (S.gdp && src && src.kind === "wb") {
+        const same = gdpCurrencyStatus(src.cur) === "match";
+        put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ", `${svCountry(src.country)[1]}, ${src.year}: `,
+          el("b", { class: "num" }, same ? money(S.gdp, true) : `${gdpBig(src.value)} ${src.cur || ""}`), el("span", { class: "muted" }, " (World Bank)"),
+          same ? null : src.forced ? ` In ${gdpCurName(src.cur)}, not in the accounts' currency.` : ` Check that your accounts are in ${gdpCurName(src.cur)}.`);
+      } else if (S.gdp) {
+        put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ", el("b", { class: "num" }, money(S.gdp, true)), el("span", { class: "muted" }, " (typed in)"));
+        typed = true;
+      } else if (country && (!tr || tr.s === "busy")) {
+        put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ", el("span", { class: "muted" }, `Looking up ${cname}, ${year}…`));
+      } else if (country && tr) {
+        const r = tr.res;
+        put(line, el("span", { class: "sv-gdp-lbl" }, "GDP"), " ",
+          tr.s === "none" ? `The World Bank has no GDP for ${cname} in ${year}. Type it below to see the share of GDP.`
+            : tr.s === "mismatch" ? `The World Bank's GDP for ${cname} is in ${gdpCurName(r.cur)}, your accounts are in ${CUR}. Type GDP in ${CUR} below.`
+            : "Couldn't reach the World Bank (no internet, or the site is down). Type GDP below to see the share of GDP.");
+        typed = true;
+      }
+      if (typed && document.activeElement !== U.typed) U.typed.value = src && src.kind === "manual" && S.gdp ? gdpNumber((S.gdp * SC) / gdpUnitSize("billion")) : "";
+      put(U.gdpLine, line);
+      U.typedLbl.textContent = `GDP in ${year}, in billions of ${CUR || "the accounts' currency"}`;
+      U.typedBox.hidden = !typed;
+    },
+    /** what to do to see the share of GDP */
+    gdpHint() {
+      const tr = S.gdpCountry ? (S.simple.gdpTry || {})[gdpKey(svSeries(), S.gdpCountry, svGdpYear())] : null;
+      if (tr && tr.s === "busy") return "looking up GDP to show the share of GDP";
+      return tr || dataCountry() ? "type GDP above to see the share of GDP" : "choose a country to see the share of GDP";
+    },
+
+    /* ---------- 2. scenario ---------- */
+    renderScen() {
+      const U = this.U, tot = SV.totals(), base = tot.none, run0 = SV.run("none"), by = svBy(run0);
+      put(U.scen, SV.scenarios().map((s) => {
+        const v = tot[s.key];
+        return el("button", { type: "button", class: "sv-card", "data-scen": s.key, "aria-pressed": String(s.key === S.simple.scen), onclick: () => this.pick(s.key) },
+          el("span", { class: "sv-card-name" }, s.name),
+          el("span", { class: "sv-card-size" }, s.size),
+          el("span", { class: "sv-card-cap" }, `Cost ${by}`),
+          el("span", { class: "sv-card-total" }, el("b", { class: "num", "data-k": "total", "data-v": v }, money(v)), CUR ? el("small", {}, CUR) : null),
+          el("span", { class: "sv-card-ch" }, s.key === "none" ? "the starting point" : svChange(v, base, "more than no shock", "less than no shock", "about the same as no shock")));
+      }));
+      U.scenLine.textContent = `Each shock lasts ${SV.D()} years. Costs are shown for ${run0.year || "the year"}, ${SV.H()} years after the latest accounts.`;
+    },
+    pick(key) {
+      S.simple.scen = key;
+      this.U.scen.querySelectorAll("button[data-scen]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.scen === key)));
+      this.renderAnswer();
+      this.renderRange();
+    },
+
+    /* ---------- 3. answer ---------- */
+    renderAnswer() {
+      const U = this.U, st = S.simple, run = SV.run(st.scen), w = SV.warnings(), n = run.items.length, by = svBy(run);
+      const hasGdp = svNum(run.futGdp);
+      const lead = run.key === "none" ? "With no shock" : `Under “${run.name}”`;
+      put(U.answer,
+        el("p", { class: "sv-big" }, `${lead}, your ${pl(n, "SOE")} could cost the budget `, el("b", { class: "num" }, money(run.futTotal, true)), ` ${by}`,
+          hasGdp ? [", ", el("b", { class: "num" }, `${pctS(run.futGdp)} of GDP`)] : null, "."),
+        el("p", { class: "sv-big-sub" }, `From the latest accounts, the cost to the budget today is ${money(run.nowTotal, true)}` +
+          (svNum(run.nowGdp) ? `, ${pctS(run.nowGdp)} of GDP.` : ".") + (hasGdp ? "" : ` ${this.gdpHint().replace(/^./, (c) => c.toUpperCase())}.`)));
+      U.hint.textContent = "Largest first. Select an SOE to see why, and what to do." + (CUR ? ` Amounts in ${CUR}.` : "");
+      const open = (name) => { st.soe = name; showTab("soe"); window.scrollTo({ top: 0 }); };
+      const rows = clipRows(run.items, st.all).map((it) => {
+        const wv = w.by[it.name] || { level: "ok", rules: [] }, nr = wv.rules.filter((id) => id !== "routine").length;
+        return el("tr", { class: "pick", tabindex: "0", "data-soe": it.name, "aria-label": `${it.name}: open the page for this SOE`,
+          onclick: () => open(it.name), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(it.name); } } },
+          nameCell(it.name, it.r.Sector),
+          el("td", { class: "sv-health", "data-label": "Health now" }, zoneChip(it.zoneNow), el("span", { class: "sv-why" }, distressWhy(it.r))),
+          el("td", { class: "r", "data-k": "now", "data-v": it.now, "data-label": "Cost now" }, el("span", { class: "sv-amt" }, money(it.now))),
+          el("td", { class: "r", "data-k": "fut", "data-v": it.fut, "data-label": `Cost ${by}` }, el("span", { class: "sv-amt strong" }, money(it.fut)),
+            el("span", { class: "sv-chg" }, svChange(it.fut, it.now, "more than now", "less than now", "same as now"), zoneChip(it.zoneFut))),
+          el("td", { "data-k": "warn", "data-v": nr, "data-level": wv.level, "data-label": "Warnings" }, el("span", { class: "sv-warn" }, stChip(wv.level), el("span", { class: "sv-rules" }, nr ? pl(nr, "warning") : "none"))));
+      });
+      const futHead = `Cost ${by}: ${run.name}`;
+      const t = el("table", { id: "sv-table", class: "sv-table" },
+        el("thead", {}, el("tr", {}, el("th", {}, "SOE"), el("th", {}, "Health now"),
+          el("th", { class: "r" }, "Cost to the budget now", el("small", {}, "expected fiscal cost, from the latest accounts")),
+          el("th", { class: "r" }, futHead, el("small", {}, "change against now, and health then")), el("th", {}, "Warnings"))),
+        el("tbody", {}, rows),
+        el("tfoot", {}, el("tr", {},
+          el("td", { colspan: "2" }, el("b", {}, n > 1 ? `All ${n} SOEs` : "All SOEs")),
+          el("td", { class: "r", "data-label": "Cost now" }, el("b", { class: "num", "data-k": "now-total", "data-v": run.nowTotal }, money(run.nowTotal, true)),
+            svNum(run.nowGdp) ? el("small", {}, `${pctS(run.nowGdp)} of GDP`) : null),
+          el("td", { class: "r", "data-label": `Cost ${by}` }, el("b", { class: "num sv-foot-fut", "data-k": "fut-total", "data-v": run.futTotal }, money(run.futTotal, true)),
+            el("small", { "data-k": "fut-gdp", "data-v": hasGdp ? run.futGdp : "" }, hasGdp ? `${pctS(run.futGdp)} of GDP` : this.gdpHint())),
+          el("td", {}))));
+      put(U.table, t);
+      const csv = () => toCSV(["SOE", "Sector", "Health now", "Cost to the budget now", futHead, "Health then", "Warning level", "Rules"],
+        run.items.map((it) => { const wv = w.by[it.name] || { level: "ok", rules: [] }; return [it.name, it.r.Sector, it.zoneNow, it.now, it.fut, it.zoneFut, STLABEL[wv.level] || wv.level, wv.rules.filter((id) => id !== "routine").length]; }));
+      put(U.tools, moreToggle(n, st.all, (v) => { st.all = v; this.renderAnswer(); }, `Show the ${LIMIT} largest only`), dataButtons(csv, `soe_cost_${run.key}.csv`));
+    },
+
+    /* ---------- 4. how sure ---------- */
+    renderRange() {
+      const U = this.U, key = S.simple.scen;
+      U.range.setAttribute("data-ready", "0");
+      U.range.setAttribute("aria-busy", "true");
+      put(U.rangeBody, el("p", { class: "sv-wait" }, "Working out the range…"));
+      SV.range(key, (g) => {
+        const P = pages.simple;
+        if (S.simple.scen !== key || g.key !== key || !P.U || !P.U.range.isConnected) return; // another scenario was chosen meanwhile
+        P.drawRange(g);
+      });
+    },
+    /** two horizontal bars on one scale: low and high ends labelled outside the bar, the answer marked wherever it falls */
+    drawRange(g) {
+      const U = this.U, body = U.rangeBody;
+      put(body);
+      const above = g.above.length ? el("p", { class: "sv-rnote sv-above" },
+        `For ${g.above.length} of ${Object.keys(g.by).length} SOEs the low figure for their sector is above the ${fmt(g.share * 100, 0)}% used for the answer, so their own range starts above their answer.`) : null;
+      svRangeBars(body, g, above);
+      U.range.setAttribute("data-ready", "1");
+      U.range.setAttribute("aria-busy", "false");
+    },
+
+    /* ---------- 5. assumptions ---------- */
+    renderAssume() {
+      const st = S.simple, n = SV.changed();
+      const d = el("details", { id: "sv-assume", class: "card sv-assume", open: st.open.assume ? true : null },
+        el("summary", {}, el("span", { class: "sv-assume-t" }, "Assumptions behind these numbers"),
+          el("span", { id: "sv-changed", class: "st watch", hidden: n ? null : true }, `${n} changed in Analyst view`)),
+        el("dl", { class: "sv-asm" }, SV.assumptions().map((a) => el("div", { class: "sv-asm-row" + (a.changed ? " changed" : "") },
+          el("dt", {}, a.label), el("dd", {}, a.value, a.changed ? el("span", { class: "sv-tag" }, "changed") : null)))),
+        el("p", { class: "note" }, "These can be changed in the Analyst view. Changes made there show here. ", svAnalyst("Open the Analyst view")));
+      d.addEventListener("toggle", () => { st.open.assume = d.open; });
+      put(this.U.assume, d);
+    },
+  };
+
+  /** the two range bars (shock range, State-share range) drawn into `body`, which must already be in the page so its width
+      can be read. g = { head, shock: [lo, hi], state: [lo, hi], n }; `stateExtra` is an optional note under the second bar.
+      Used by the Overview (portfolio) and the One-SOE page (one SOE). */
+  function svRangeBars(body, g, stateExtra) {
+    const W = body.clientWidth || 600, gap = 8;
+    const probe = (s, cls) => { const sp = el("span", { class: cls, style: "position:absolute;visibility:hidden;white-space:nowrap" }, s); body.appendChild(sp); const w = sp.getBoundingClientRect().width; sp.remove(); return Math.ceil(w || s.length * 8); };
+    const headTxt = `${money(g.head)} · the answer`;
+    const Lw = Math.max(probe(money(g.shock[0]), "sv-rl num"), probe(money(g.state[0]), "sv-rl num"));
+    const Rw = Math.max(probe(money(g.shock[1]), "sv-rl num"), probe(money(g.state[1]), "sv-rl num"));
+    const headW = probe(headTxt, "sv-rhead num");
+    const lo = Math.min(g.shock[0], g.state[0], g.head), hi = Math.max(g.shock[1], g.state[1], g.head);
+    const inner = W - Lw - Rw - 2 * gap, stacked = inner < 90; // too narrow for labels beside the bars: put them under
+    const span = hi - lo || Math.abs(hi) || 1;
+    const d0 = lo - (stacked ? span * 0.02 : ((Lw + gap) * span) / inner), d1 = hi + (stacked ? span * 0.02 : ((Rw + gap) * span) / inner);
+    const x = (v) => ((v - d0) / (d1 - d0)) * 100;
+    const sds = [["fuel prices", true], ["the currency", true], ["interest rates", !!CFG.MC_DEFAULT_RATE_STD_BPS], ["revenue", !!CFG.MC_DEFAULT_REVENUE_STD_SD]];
+    const on = sds.filter((s) => s[1]).map((s) => s[0]), off = sds.filter((s) => !s[1]).map((s) => s[0]);
+    const list = (a) => (a.length > 1 ? a.slice(0, -1).join(", ") + " and " + last(a) : a[0] || "");
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    const shockNote = `9 in 10 of ${g.n.toLocaleString("en-US")} simulated futures fall in this range. ${cap(list(on))} vary around the scenario` + (off.length ? `; ${list(off)} ${off.length > 1 ? "do" : "does"} not.` : ".");
+    const bar = (k, title, note, extra, first) => {
+      const [a, b] = g[k], xa = x(a), xb = x(b), xh = x(g.head), px = (xh / 100) * W;
+      const hpos = px < headW / 2 ? "l" : px > W - headW / 2 ? "r" : "c";
+      const end = (side, v, style) => el("span", { class: "sv-rl num " + side, "data-k": `${k}-${side}`, "data-v": v, style }, money(v));
+      return el("div", { class: "sv-rrow" },
+        el("div", { class: "sv-rtitle" }, title),
+        el("div", { class: "sv-rbar" + (stacked ? " stacked" : ""), role: "img", "aria-label": `From ${money(a, true)} to ${money(b, true)}; the answer above is ${money(g.head, true)}` },
+          el("span", { class: "sv-rspan", style: `left:${xa}%;width:${Math.max(xb - xa, 0.4)}%` }),
+          end("lo", a, stacked ? `left:${xa}%` : `right:calc(${100 - xa}% + ${gap}px)`),
+          end("hi", b, stacked ? `right:${100 - xb}%` : `left:calc(${xb}% + ${gap}px)`),
+          el("span", { class: "sv-rmark", style: `left:${xh}%` }),
+          el("span", { class: "sv-rhead num " + hpos, "data-k": first ? "head" : null, "data-v": first ? g.head : null, style: hpos === "c" ? `left:${xh}%` : null }, headTxt)),
+        el("p", { class: "sv-rnote" }, note), extra);
+    };
+    put(body,
+      bar("shock", "If fuel prices and the currency turn out better or worse than assumed", shockNote, null, true),
+      bar("state", "If the State ends up bearing less or more of the loss", "From the low to the high share for each SOE's sector, based on past defaults on public loans.", stateExtra, false));
+  }
+
+  /* ===== SIMPLE VIEW · C · one-SOE page ===== */
+  // Reads top to bottom: what state is this SOE in → why (health checks, ratios) → what it could cost → what to do.
+  // Every figure is read from the same places as the Overview (SV.run, SV.range, SV.warnings) and the Analyst tabs
+  // (enriched rows, HEALTH/WHY/STRONG, kpiStatus, RULE_BY); nothing is typed in.
+  const SV_SEV = { alert: 0, watch: 1, ok: 2 };
+  /** the app's own texts, with the one technical label that a rule's follow-up text can carry put in plain words */
+  const svPlain = (t) => String(t).replace(/Z″(-EM)?/g, "distress score");
+  /** a small line of one series, no axes; a missing value breaks the line, a single point is a dot */
+  function svSpark(vals, years, fmtV, label) {
+    const W = 104, H = 28, P = 4, pts = vals.map((v, i) => [i, v]).filter(([, v]) => ok(v));
+    const svg = svgEl("svg", { class: "sv-spark", viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "" });
+    if (!pts.length) { svg.setAttribute("aria-label", `${label}: no values`); return svg; }
+    const lo = Math.min(...pts.map((q) => q[1])), hi = Math.max(...pts.map((q) => q[1])), n = vals.length;
+    const x = (i) => (n > 1 ? P + (i / (n - 1)) * (W - 2 * P) : W / 2), y = (v) => (hi - lo < 1e-12 ? H / 2 : H - P - ((v - lo) / (hi - lo)) * (H - 2 * P));
+    let d = "", prev = -2;
+    pts.forEach(([i, v]) => { d += `${i === prev + 1 ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; prev = i; });
+    if (pts.length > 1) svgEl("path", { d, class: "sv-spark-ln" }, svg);
+    const [li, lv] = last(pts), [fi, fv] = pts[0];
+    svgEl("circle", { cx: x(li).toFixed(1), cy: y(lv).toFixed(1), r: 3, class: "sv-spark-dot" }, svg);
+    svg.setAttribute("aria-label", pts.length > 1 ? `${label}: ${fmtV(fv)} in ${years[fi]}, ${fmtV(lv)} in ${years[li]}` : `${label}: ${fmtV(lv)} in ${years[li]}`);
+    return svg;
+  }
+
+  pages.soe = {
+    build(root) {
+      const U = (this.U = {});
+      const back = () => { showTab("simple"); window.scrollTo({ top: 0 }); };
+      U.back = el("button", { type: "button", class: "btn", id: "soe-back", onclick: back }, "← Back to all SOEs");
+      U.prev = el("button", { type: "button", class: "btn", id: "soe-prev", onclick: () => this.step(-1) }, "← Previous");
+      U.next = el("button", { type: "button", class: "btn", id: "soe-next", onclick: () => this.step(1) }, "Next →");
+      U.pos = el("span", { class: "sv-pos", id: "soe-pos", "aria-live": "polite" });
+      U.title = el("h2", { id: "soe-title" });
+      U.sub = el("p", { id: "soe-sub" });
+      const sec = (id, hid, title, sub) => { const body = el("div", { class: "sv-soe-body" }); return { body, root: el("section", { id, class: "card sv-sec", "aria-labelledby": hid }, svHead(null, hid, title, sub), body) }; };
+      U.verdict = el("section", { id: "soe-verdict", class: "card sv-sec sv-verdict", "aria-label": "Verdict" });
+      U.health = sec("soe-health", "soe-h-health", "Four health checks", "Each bar shows how much one check adds to (right) or takes from (left) the distress score. The longer the bar, the bigger the effect.");
+      U.ratios = sec("soe-ratios", "soe-h-ratios", "Health ratios", "The latest accounts, read against the cut-offs the tool uses.");
+      U.cost = sec("soe-cost", "soe-h-cost", "What it could cost the budget");
+      U.actions = sec("soe-actions", "soe-h-actions", "What to do", "The follow-up the tool calls for, from this SOE's latest accounts.");
+      U.links = sec("soe-links", "soe-h-links", "Look closer in Analyst view");
+      U.links.root.classList.add("sv-soe-links");
+      root.replaceChildren(el("div", { class: "sv sv-soe" },
+        el("nav", { class: "sv-soe-nav", "aria-label": "SOE pages" }, U.back, el("div", { class: "sv-soe-step" }, U.prev, U.pos, U.next)),
+        el("div", { class: "page-head" }, el("div", {}, el("div", { class: "eyebrow" }, "One SOE"), U.title, U.sub)),
+        U.verdict, U.health.root, U.ratios.root, U.cost.root, U.actions.root, U.links.root));
+    },
+    /** the SOE shown: the reader's choice, else the one with the largest cost; order = the Overview table's */
+    items() { return SV.run(S.simple.scen).items; },
+    index() {
+      const items = this.items(), st = S.simple;
+      let i = items.findIndex((x) => x.name === st.soe);
+      if (i < 0) { i = 0; st.soe = items[0] ? items[0].name : null; }
+      return i;
+    },
+    step(d) {
+      const items = this.items(), i = this.index() + d;
+      if (i < 0 || i >= items.length) return;
+      S.simple.soe = items[i].name;
+      this.render();
+      window.scrollTo({ top: 0 });
+    },
+    render() {
+      const U = this.U, items = this.items();
+      if (!items.length) { put(U.title, "No SOEs loaded"); put(U.sub); return; }
+      const i = this.index(), it = items[i], r = it.r, name = it.name;
+      this.cur = name;
+      const hist = byYearAsc(allRows().filter((q) => q.Entity === name));
+      put(U.title, name);
+      put(U.sub, [r.Sector, ok(r.Year) ? `latest accounts: ${r.Year}` : ""].filter(Boolean).join(" · "));
+      U.prev.disabled = i <= 0;
+      U.next.disabled = i >= items.length - 1;
+      put(U.pos, `${i + 1} of ${items.length}`);
+      this.renderVerdict(it);
+      this.renderHealth(it, hist);
+      this.renderRatios(it, hist);
+      this.renderCost(it);
+      this.renderActions(it);
+      this.renderLinks(it);
+    },
+
+    /* ---------- verdict ---------- */
+    renderVerdict(it) {
+      const r = it.r, zl = String(ZLABEL[zk(r.Zone)] || r.Zone).toLowerCase().replace(/ zone$/, ""), why = distressWhy(r);
+      if (!ok(r.Z_EM)) { put(this.U.verdict, el("p", { class: "sv-big" }, `${it.name}: the accounts do not have enough figures to work out a distress score, so there is no zone or rating.`)); return; }
+      put(this.U.verdict, el("p", { class: "sv-big" }, `${it.name} is in the ${zl} zone${why ? ", " + why : ""}. Its indicative rating is ${r.Rating || "n/a"}. `, zoneChip(r.Zone)));
+    },
+
+    /* ---------- four health checks ---------- */
+    renderHealth(it, hist) {
+      const U = this.U, r = it.r, ks = ["X1", "X2", "X3", "X4"], C = CFG.ZEM_COEFFICIENTS;
+      const vals = ks.map((k) => r[k] * C[k]), mx = Math.max(1e-9, ...vals.filter(ok).map(Math.abs));
+      const rows = ks.map((k, j) => {
+        const v = vals[j], has = ok(v), w = has ? (Math.abs(v) / mx) * 50 : 0;
+        const mean = !has ? "no figure for this check in the accounts" : v >= 0 ? `Good: ${STRONG[k]}` : `Weak: ${WHY[k]}`;
+        return el("li", { class: "sv-hc-row", "data-check": HEALTH[k] },
+          el("span", { class: "sv-hc-name" }, HEALTH[k]),
+          el("span", { class: "sv-hc-bar", role: "img", "aria-label": has ? `${HEALTH[k]}: ${sgn(v, 2)}` : `${HEALTH[k]}: no figure` },
+            has ? el("i", { class: v >= 0 ? "pos" : "neg", style: v >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%` }) : null),
+          el("span", { class: "sv-hc-val num", "data-v": has ? v : "" }, has ? sgn(v, 2) : "—"),
+          el("span", { class: "sv-hc-mean" }, mean));
+      });
+      const box = el("div", { class: "chart sv-hist" });
+      put(U.health.body, el("ul", { class: "sv-hc", role: "list" }, rows),
+        el("figure", { class: "sv-fig" }, box, el("figcaption", {}, "Distress score by year")));
+      const z = hist.map((q) => q.Z_EM);
+      if (!z.some(ok)) { put(box, el("p", { class: "sv-wait" }, "No distress score could be worked out for this SOE.")); return; }
+      const W = widthOf(box);
+      lines(box, hist.map((q) => q.Year), [{ vals: z, cls: "ln-med", dot: "now", label: "Distress score" }], {
+        h: 200, R: W < 420 ? 78 : 88, maxDots: 12,
+        hlines: [{ y: CFG.Z_SAFE_CUTOFF, cls: "thr-warn sv-faint", label: "safe above", include: true }, { y: CFG.Z_DISTRESS_CUTOFF, cls: "thr-crit sv-faint", label: "distress below", include: true }],
+        tipTitle: (k) => `${it.name} · ${hist[k].Year}`, tip: (k) => [[fmt(z[k], 2), "distress score"], [ZLABEL[zk(hist[k].Zone)] || hist[k].Zone, "zone"]],
+        endLabel: { series: 0, fmt: (v) => fmt(v, 2) } });
+    },
+
+    /* ---------- health ratios ---------- */
+    renderRatios(it, hist) {
+      const body = this.U.ratios.body, r = it.r;
+      const avail = E.availableKpis(hist), keys = CFG.REPORT_HEADLINE_KPIS.filter((k) => avail.includes(k));
+      if (!keys.length) { put(body, el("p", { class: "sv-wait" }, "The file has no figures for the ratios the tool reads, so none can be shown for this SOE.")); return; }
+      const years = hist.map((q) => q.Year);
+      const rows = keys.map((k) => {
+        const s = kpiStatus(r, k), v = r[k];
+        return el("tr", { "data-kpi": k },
+          el("th", { scope: "row", class: "sv-rt-name", "data-label": "Ratio" }, SPEC[k].label),
+          el("td", { class: "r num sv-rt-val", "data-label": "Latest", "data-v": ok(v) ? v : "" }, kpiFmt(k, v), s.why ? el("small", {}, s.why) : null),
+          el("td", { class: "sv-rt-st", "data-label": "Status" }, s.st ? stChip(s.st) : el("span", { class: "muted" }, "no data")),
+          el("td", { class: "sv-rt-cut", "data-label": "Cut-off" }, cutText(k)),
+          el("td", { class: "sv-rt-tr", "data-label": "Over the years" }, svSpark(hist.map((q) => q[k]), years, (x) => kpiFmt(k, x), SPEC[k].label)));
+      });
+      put(body, el("div", { class: "tbl-wrap sv-tbl" }, el("table", { class: "sv-rt" },
+        el("thead", {}, el("tr", {}, el("th", {}, "Ratio"), el("th", { class: "r" }, "Latest"), el("th", {}, "Status"), el("th", {}, "Cut-off"), el("th", {}, years.length > 1 ? `${years[0]}–${last(years)}` : "Year"))),
+        el("tbody", {}, rows))));
+    },
+
+    /* ---------- what it could cost ---------- */
+    renderCost(it) {
+      const U = this.U, st = S.simple, name = it.name, scs = SV.scenarios();
+      const vals = scs.map((s) => { const x = SV.run(s.key).items.find((q) => q.name === name); return x ? x.fut : NaN; });
+      const mx = Math.max(1e-9, ...vals.filter(ok));
+      const run = SV.run(st.scen), by = svBy(run);
+      const rows = scs.map((s, j) => {
+        const sel = s.key === st.scen, v = vals[j];
+        return el("button", { type: "button", class: "sv-srow" + (sel ? " sel" : ""), "data-scen": s.key, "data-v": ok(v) ? v : "", "aria-pressed": String(sel),
+          onclick: () => { st.scen = s.key; this.renderCost(this.items()[this.index()]); } },
+          el("span", { class: "sv-sr-name" }, el("b", {}, s.name), sel ? el("span", { class: "sv-sr-sel" }, "selected") : null, el("small", {}, s.size)),
+          el("span", { class: "sv-sr-bar", "aria-hidden": "true" }, el("i", { style: `width:${ok(v) ? Math.max(0, (v / mx) * 100) : 0}%` })),
+          el("span", { class: "sv-sr-amt num" }, money(v)));
+      });
+      const body = el("div", { class: "sv-range-body", id: "soe-range-body" });
+      U.rangeBody = body;
+      U.rangeSec = el("div", { id: "soe-range", class: "sv-soe-range", "data-ready": "0", "aria-busy": "true" },
+        el("h4", { class: "sv-h4" }, "How sure is this number?"),
+        el("p", { class: "sv-sub" }, `For this SOE under “${run.name}”, cost ${by}. Each bar shows how far it could move; the mark is the answer.`), body);
+      put(U.cost.body,
+        el("p", { class: "sv-now" }, "Now, from the latest accounts: ", el("b", { class: "num", "data-k": "now", "data-v": it.now }, money(it.now, true))),
+        el("p", { class: "sv-hint" }, `Cost to the budget ${by} under each scenario. Select one to see its range below.` + (CUR ? ` Amounts in ${CUR}.` : "")),
+        el("div", { class: "sv-srows", role: "group", "aria-label": "Scenario" }, rows),
+        U.rangeSec);
+      put(body, el("p", { class: "sv-wait" }, "Working out the range…"));
+      const key = st.scen, tok = (this.tok = (this.tok || 0) + 1);
+      SV.range(key, (g) => {
+        // ignore the answer when another SOE or scenario is shown by now
+        if (this.tok !== tok || S.tab !== "soe" || S.simple.scen !== key || g.key !== key || this.cur !== name || !body.isConnected) return;
+        const b = g.by[name];
+        if (!b) { put(body, el("p", { class: "sv-wait" }, "No range could be worked out for this SOE.")); return; }
+        const note = b.share[0] > g.share ? el("p", { class: "sv-rnote sv-above" },
+          `For ${it.r.Sector} SOEs the low figure (${fmt(b.share[0] * 100, 0)}%) is above the ${fmt(g.share * 100, 0)}% used for the answer, so this range starts above it.`) : null;
+        svRangeBars(body, { head: b.head, shock: b.shock, state: b.state, n: g.n }, note);
+        U.rangeSec.setAttribute("data-ready", "1");
+        U.rangeSec.setAttribute("aria-busy", "false");
+      });
+    },
+
+    /* ---------- what to do ---------- */
+    renderActions(it) {
+      const w = SV.warnings().by[it.name] || { level: "ok", rules: [] };
+      const rules = w.rules.map((id) => RULE_BY[id]).filter(Boolean).sort((a, b) => SV_SEV[a.level] - SV_SEV[b.level]);
+      const real = rules.filter((q) => q.id !== "routine");
+      put(this.U.actions.body,
+        el("p", { class: "sv-lead" }, stChip(w.level), " ", real.length ? `${pl(real.length, "warning")} for this SOE, the most severe first.` : "No warning fires for this SOE. Routine monitoring is enough."),
+        rules.map((q) => el("div", { class: "sv-rule", "data-rule": q.id },
+          el("h4", { class: "sv-h4" }, stChip(q.level, q.short)),
+          el("ol", {}, (q.steps || [q.action]).map((t) => el("li", {}, svPlain(t)))))));
+    },
+
+    /* ---------- links to the Analyst view ---------- */
+    renderLinks(it) {
+      const name = it.name, r = it.r;
+      const link = (tab, label, text, fn) => el("li", {}, el("a", { href: "#view-" + tab, onclick: (e) => { e.preventDefault(); fn(); showTab(tab); window.scrollTo({ top: 0 }); } }, label), el("span", {}, text));
+      put(this.U.links.body, el("ul", { class: "sv-lk" },
+        // exactly what Early Warning's "Open in Shock Scenarios" button does for the SOE in focus
+        link("shock", "Shock Scenarios", "Test one shock on this SOE and watch its accounts and health checks change.",
+          () => { S.sh.soe = name; S.sh.year = r.Year; S.sh.view = "single"; S.sh.mode = "standard"; Object.assign(S.sh.mags, STD_MAG, { fuel_shock_path: [] }); S.built.shock = false; }),
+        link("kpi", "KPI Dashboard", "Every ratio for this SOE, year by year.", () => { S.kpi.soe = name; S.kpi.view = "trend"; S.built.kpi = false; }),
+        link("altman", "Distress Indicator", "The four health checks and the distress score in detail.", () => { S.alt.soe = name; S.alt.view = "components"; S.built.altman = false; })));
+    },
+  };
