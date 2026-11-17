@@ -1299,3 +1299,10 @@ body[data-tab="how"] { background: #f3f6f8; }
 /*__SIMPLE_CSS__*/
 
 
+
+/* Collapsible shock transmission path follows the four primary charts. */
+.shock-travel-fold { margin-top: 2px; }
+.shock-travel-fold > summary { cursor: pointer; font-weight: 700; font-size: 15px; color: var(--heading); }
+.shock-travel-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shock-travel-inner { border: 0; padding: 8px 0 0; box-shadow: none; }
+.shock-travel-toolbar { display: flex; justify-content: flex-end; margin: 0 0 10px; }
