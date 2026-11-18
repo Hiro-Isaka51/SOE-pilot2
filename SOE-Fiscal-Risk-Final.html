@@ -75,7 +75,8 @@ button { font: inherit; }
 /* title band */
 .band { background: var(--band-bg); color: var(--band-ink); }
 .band .inner { padding-block: 18px 16px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; }
-.eyebrow { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.eyebrow { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #0071BC; font-weight: 700; }
+.band .eyebrow { color: #7FDBFF; }
 .band h1 { color: var(--band-ink); font-size: clamp(20px, 2.6vw, 26px); font-weight: 700; letter-spacing: -.01em; margin-top: 2px; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .meta span { font-size: 12px; color: var(--band-ink-2); background: var(--band-chip); border-radius: 2px; padding: 3px 9px; }
@@ -442,6 +443,58 @@ g.row:hover .bar.neg { fill: var(--neg); filter: brightness(.9); }
 .band-upload { font-size: 12.5px; font-weight: 700; color: var(--band-ink); background: transparent; border: 1px solid rgba(255, 255, 255, .45); border-radius: 2px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }
 .band-upload:hover { background: rgba(255, 255, 255, .12); }
 .band-upload:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Two-option segmented view control, with sliding active selection. */
+.view-segment {
+  --segment-pad: 4px;
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  padding: var(--segment-pad);
+  border: 1px solid rgba(170,220,245,.55);
+  border-radius: 999px;
+  background: rgba(255,255,255,.09);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.13);
+  min-height: 40px;
+  isolation: isolate;
+}
+.view-segment-thumb {
+  position: absolute;
+  z-index: 0;
+  top: var(--segment-pad);
+  bottom: var(--segment-pad);
+  left: var(--segment-pad);
+  width: calc((100% - 2 * var(--segment-pad)) / 2);
+  border-radius: 999px;
+  background: #b4edff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.19);
+  transform: translateX(0);
+  transition: transform .28s cubic-bezier(.2,.75,.2,1), background-color .2s ease;
+}
+.view-segment[data-selected="analyst"] .view-segment-thumb { transform: translateX(100%); }
+.view-segment-option {
+  position: relative;
+  z-index: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #e4f4fd;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: color .2s ease;
+}
+.view-segment-option[aria-pressed="true"] { color: #002244; cursor: default; }
+.view-segment-option[aria-pressed="false"]:hover { color: #fff; }
+.view-segment-option:focus-visible { outline: 2px solid #b4edff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .view-segment-thumb, .view-segment-option { transition: none; }
+}
 
 /* home: load data (top of the page) */
 .upload-card { margin-bottom: 4px; }
@@ -1527,6 +1580,15 @@ body[data-mode="simple"] #bandUpload { display: none; }
 }
 
 
+
+
+/* Collapsible shock transmission path follows the four primary charts. */
+.shock-travel-fold { margin-top: 2px; }
+.shock-travel-fold > summary { cursor: pointer; font-weight: 700; font-size: 15px; color: var(--heading); }
+.shock-travel-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shock-travel-inner { border: 0; padding: 8px 0 0; box-shadow: none; }
+.shock-travel-toolbar { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+
 </style>
 
 <header class="band">
@@ -1537,7 +1599,11 @@ body[data-mode="simple"] #bandUpload { display: none; }
     </div>
     <div class="band-right">
       <div class="meta" id="meta"></div>
-      <button type="button" class="band-upload" id="modeSwitch">Analyst view</button>
+      <div class="view-segment" id="modeSwitch" role="group" aria-label="Dashboard view">
+        <span class="view-segment-thumb" aria-hidden="true"></span>
+        <button type="button" class="view-segment-option" data-mode-target="simple" aria-pressed="true">Simple view</button>
+        <button type="button" class="view-segment-option" data-mode-target="analyst" aria-pressed="false">Analyst view</button>
+      </div>
       <button type="button" class="band-upload" id="bandUpload">⬆ Upload data</button>
     </div>
   </div>
@@ -1551,9 +1617,9 @@ body[data-mode="simple"] #bandUpload { display: none; }
       <li><button role="tab" id="t-kpi" aria-controls="kpi" data-tab="kpi">KPI Dashboard</button></li>
       <li><button role="tab" id="t-altman" aria-controls="altman" data-tab="altman">Distress Indicator</button></li>
       <li><button role="tab" id="t-efc" aria-controls="efc" data-tab="efc">Expected Fiscal Cost</button></li>
-      <li><button role="tab" id="t-shock" aria-controls="shock" data-tab="shock">Shock Scenarios</button></li>
       <li><button role="tab" id="t-warning" aria-controls="warning" data-tab="warning">Early Warning</button></li>
       <li><button role="tab" id="t-report" aria-controls="report" data-tab="report">Report</button></li>
+      <li><button role="tab" id="t-shock" aria-controls="shock" data-tab="shock">Shock Scenarios</button></li>
       <!-- hidden from the tab bar (meeting 2026-10-26); still reachable from links and #view-gre / #view-assumptions / #view-about -->
       <li class="tab-hidden" hidden><button role="tab" id="t-gre" aria-controls="gre" data-tab="gre">Government Support</button></li>
       <li class="tab-hidden" hidden><button role="tab" id="t-assumptions" aria-controls="assumptions" data-tab="assumptions">Technical notes</button></li>
@@ -3298,7 +3364,13 @@ body[data-mode="simple"] #bandUpload { display: none; }
     document.body.dataset.mode = simpleMode ? "simple" : "analyst";
     if (!simpleMode) S.lastAnalyst = id;
     const ms = document.getElementById("modeSwitch");
-    if (ms) ms.textContent = simpleMode ? "Analyst view" : "Simple view";
+    if (ms) {
+      ms.dataset.selected = simpleMode ? "simple" : "analyst";
+      ms.querySelectorAll("[data-mode-target]").forEach((btn) => {
+        const selected = btn.dataset.modeTarget === ms.dataset.selected;
+        btn.setAttribute("aria-pressed", String(selected));
+      });
+    }
     document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
     // Government Support and Technical notes are off the tab bar; their tab shows only while one of them is open
     document.querySelectorAll("#tabs li.tab-hidden").forEach((li) => { li.hidden = li.querySelector("button").dataset.tab !== id; });
@@ -3319,7 +3391,12 @@ body[data-mode="simple"] #bandUpload { display: none; }
   }
   document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); }));
   const modeSw = document.getElementById("modeSwitch");
-  if (modeSw) modeSw.addEventListener("click", () => { showTab(SIMPLE_TABS.has(S.tab) ? (S.lastAnalyst || "home") : "simple"); window.scrollTo({ top: 0 }); });
+  if (modeSw) modeSw.querySelectorAll("[data-mode-target]").forEach((btn) => btn.addEventListener("click", () => {
+    const target = btn.dataset.modeTarget;
+    if ((target === "simple") === SIMPLE_TABS.has(S.tab)) return;
+    showTab(target === "simple" ? "simple" : (S.lastAnalyst || "home"));
+    window.scrollTo({ top: 0 });
+  }));
   const bandUp = document.getElementById("bandUpload");
   if (bandUp) bandUp.addEventListener("click", () => {
     showTab("home"); window.scrollTo({ top: 0 });
@@ -3675,8 +3752,9 @@ body[data-mode="simple"] #bandUpload { display: none; }
 
       /* 3. what the tool finds in the data on screen: four questions with today's answers */
       H.qs = el("div", { class: "lp-qs" });
+      // Restore original Analyst Home inline more/less intro; Simple view has no About section.
       root.replaceChildren(el("div", { class: "lp" },
-        el("h2", { class: "lp-title" }, "About this tool..."),
+        el("h2", { class: "lp-title" }, "About this tool"),
         // the tool's purpose, method and limits, as written by the team (paragraph breaks added for reading)
         el("div", { class: "lp-intro" },
           el("p", {}, ...moreText(
@@ -4065,7 +4143,7 @@ body[data-mode="simple"] #bandUpload { display: none; }
       if (yrs.length > 2) ctl.append(fSelect("From", yrs, st.from, (v) => { st.from = Math.min(v, st.to); this.render(); }, { num: true }), fSelect("To", yrs, st.to, (v) => { st.to = Math.max(v, st.from); this.render(); }, { num: true }));
       H.charts = {};
       const grid = el("div", { class: "grid3" });
-      ["X1", "X2", "X3", "X4", "Z_EM"].forEach((k) => {
+      ["Z_EM", "X1", "X2", "X3", "X4"].forEach((k) => {
         const chart = el("div", { class: "chart" });
         const c = el("div", { class: "card top" }, el("div", { class: "card-head", style: "margin-bottom:6px" }, el("div", {}, el("h3", {}, COMP_TITLES[k], info(CFG.GLOSSARY[GLOSS[k]] || "")))), chart);
         if (k === "Z_EM") c.insertBefore(legendRow([legendItem(LG.thrC, `Distress (${CFG.Z_DISTRESS_CUTOFF})`), legendItem(LG.thrW, `Safe threshold (${CFG.Z_SAFE_CUTOFF})`)]), chart);
@@ -5055,8 +5133,16 @@ body[data-mode="simple"] #bandUpload { display: none; }
     buildSingle() {
       const H = this.H, st = S.sh;
       H.subsidy = el("div");
-      H.trans = card("How the shock travels", null, el("a", { class: "btn-ghost", href: "#view-how", onclick: (e) => { e.preventDefault(); goHowShock(st.mode === "custom" ? st.stype : null); } }, "Step by step →"));
-      H.trans.body.append(el("div"));
+      // Keep this explanation below the four result charts, collapsed by default.
+      // The state persists when shock parameters update or the page is rebuilt.
+      H.trans = card(null);
+      H.trans.body.append(
+        el("div", { class: "shock-travel-toolbar" },
+          el("a", { class: "btn-ghost", href: "#view-how", onclick: (e) => { e.preventDefault(); goHowShock(st.mode === "custom" ? st.stype : null); } }, "Step by step →")),
+        el("div"));
+      H.trans.root.classList.add("shock-travel-inner");
+      H.transFold = fold(st.open, "r-shock-travel", "How the shock travels", [H.trans.root]);
+      H.transFold.classList.add("card", "res-fold", "shock-travel-fold");
       H.bz = card("Distress score: what moved it", "Final year, shock against no shock. Each bar is one health check, times its weight in the score."); H.bz.body.append(el("div", { class: "chart" }));
       H.be = card("Expected fiscal cost: what moved it", "Final year, shock against no shock: a higher chance of distress, and more debt at stake."); H.be.body.append(el("div", { class: "chart" }));
       H.z = card("Distress score path", "Shock against the no-shock path for the same SOE"); H.z.body.append(legendRow([legendItem(LG.str, "With the shock"), legendItem(LG.base, "No shock"), legendItem(LG.act, "Shock active"), legendItem(LG.grey, "Grey zone"), legendItem(LG.dist, "Distress zone")]), el("div", { class: "chart" }));
@@ -5071,8 +5157,8 @@ body[data-mode="simple"] #bandUpload { display: none; }
       H.wfsFold = fold(st.open, "r-wfs", "Payment-priority scenarios and sensitivity (Senegal case)", [H.wfs.root], again);
       [H.cashFold, H.tblFold, H.wfsFold].forEach((d) => d.classList.add("card", "res-fold"));
       // paths first (how the score and the cost evolve), then the final-year bridges that explain them
-      H.out.replaceChildren(H.subsidy, H.trans.root, el("div", { class: "grid" }, el("div", { class: "s6" }, H.z.root), el("div", { class: "s6" }, H.e.root)),
-        el("div", { class: "grid" }, el("div", { class: "s6" }, H.bz.root), el("div", { class: "s6" }, H.be.root)), H.cashFold, H.tblFold, H.wfsFold);
+      H.out.replaceChildren(H.subsidy, el("div", { class: "grid" }, el("div", { class: "s6" }, H.z.root), el("div", { class: "s6" }, H.e.root)),
+        el("div", { class: "grid" }, el("div", { class: "s6" }, H.bz.root), el("div", { class: "s6" }, H.be.root)), H.transFold, H.cashFold, H.tblFold, H.wfsFold);
     },
     buildMacro() {
       const st = S.sh, H = this.H;
@@ -5408,7 +5494,7 @@ body[data-mode="simple"] #bandUpload { display: none; }
         [`Distress score, ${f["Calendar Year"]}`, `${fmt(f.Z_EM, 2)} · ${f.Zone}`, "vs no shock", dTxt(f.Z_EM - fb.Z_EM, (v) => fmt(v, 2), false)],
         [`Expected fiscal cost, ${f["Calendar Year"]}`, money(f.EFC, true), `PD ${pctAuto(f.PD)} · vs no shock`, dTxt(f.EFC - fb.EFC, money, true)],
       ];
-      put(H.trans.body.firstChild, el("ol", { class: "trans" }, steps.map(([t, v, s0, d], i) => el("li", { class: "trans-step" + (i === 0 ? " is-shock" : "") + (d ? " d-" + d[1] : "") },
+      put(H.trans.body.lastChild, el("ol", { class: "trans" }, steps.map(([t, v, s0, d], i) => el("li", { class: "trans-step" + (i === 0 ? " is-shock" : "") + (d ? " d-" + d[1] : "") },
           el("span", { class: "trans-t" }, t), el("b", { class: "trans-v num" }, v), el("span", { class: "trans-d num" }, d ? d[0] : s0), d ? el("span", { class: "trans-s" }, s0) : null))),
         el("p", { class: "note" }, shockOn ? `Read left to right: the shock changes ${st.soe}'s accounts, the gap is borrowed, the health checks weaken and the expected fiscal cost moves. Every number is compared with the same SOE's no-shock path.` : "No shock is set: this is the no-shock path. Choose Standard stress or a Custom shock in step 3."));
       // bridges: what moved the score, and what moved the cost

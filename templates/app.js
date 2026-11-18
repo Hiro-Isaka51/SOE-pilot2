@@ -650,7 +650,13 @@
     document.body.dataset.mode = simpleMode ? "simple" : "analyst";
     if (!simpleMode) S.lastAnalyst = id;
     const ms = document.getElementById("modeSwitch");
-    if (ms) ms.textContent = simpleMode ? "Analyst view" : "Simple view";
+    if (ms) {
+      ms.dataset.selected = simpleMode ? "simple" : "analyst";
+      ms.querySelectorAll("[data-mode-target]").forEach((btn) => {
+        const selected = btn.dataset.modeTarget === ms.dataset.selected;
+        btn.setAttribute("aria-pressed", String(selected));
+      });
+    }
     document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
     // Government Support and Technical notes are off the tab bar; their tab shows only while one of them is open
     document.querySelectorAll("#tabs li.tab-hidden").forEach((li) => { li.hidden = li.querySelector("button").dataset.tab !== id; });
@@ -671,7 +677,12 @@
   }
   document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { showTab(b.dataset.tab); window.scrollTo({ top: 0 }); }));
   const modeSw = document.getElementById("modeSwitch");
-  if (modeSw) modeSw.addEventListener("click", () => { showTab(SIMPLE_TABS.has(S.tab) ? (S.lastAnalyst || "home") : "simple"); window.scrollTo({ top: 0 }); });
+  if (modeSw) modeSw.querySelectorAll("[data-mode-target]").forEach((btn) => btn.addEventListener("click", () => {
+    const target = btn.dataset.modeTarget;
+    if ((target === "simple") === SIMPLE_TABS.has(S.tab)) return;
+    showTab(target === "simple" ? "simple" : (S.lastAnalyst || "home"));
+    window.scrollTo({ top: 0 });
+  }));
   const bandUp = document.getElementById("bandUpload");
   if (bandUp) bandUp.addEventListener("click", () => {
     showTab("home"); window.scrollTo({ top: 0 });
@@ -1027,8 +1038,9 @@
 
       /* 3. what the tool finds in the data on screen: four questions with today's answers */
       H.qs = el("div", { class: "lp-qs" });
+      // Restore original Analyst Home inline more/less intro; Simple view has no About section.
       root.replaceChildren(el("div", { class: "lp" },
-        el("h2", { class: "lp-title" }, "About this tool..."),
+        el("h2", { class: "lp-title" }, "About this tool"),
         // the tool's purpose, method and limits, as written by the team (paragraph breaks added for reading)
         el("div", { class: "lp-intro" },
           el("p", {}, ...moreText(
@@ -1417,7 +1429,7 @@
       if (yrs.length > 2) ctl.append(fSelect("From", yrs, st.from, (v) => { st.from = Math.min(v, st.to); this.render(); }, { num: true }), fSelect("To", yrs, st.to, (v) => { st.to = Math.max(v, st.from); this.render(); }, { num: true }));
       H.charts = {};
       const grid = el("div", { class: "grid3" });
-      ["X1", "X2", "X3", "X4", "Z_EM"].forEach((k) => {
+      ["Z_EM", "X1", "X2", "X3", "X4"].forEach((k) => {
         const chart = el("div", { class: "chart" });
         const c = el("div", { class: "card top" }, el("div", { class: "card-head", style: "margin-bottom:6px" }, el("div", {}, el("h3", {}, COMP_TITLES[k], info(CFG.GLOSSARY[GLOSS[k]] || "")))), chart);
         if (k === "Z_EM") c.insertBefore(legendRow([legendItem(LG.thrC, `Distress (${CFG.Z_DISTRESS_CUTOFF})`), legendItem(LG.thrW, `Safe threshold (${CFG.Z_SAFE_CUTOFF})`)]), chart);
@@ -2407,8 +2419,16 @@
     buildSingle() {
       const H = this.H, st = S.sh;
       H.subsidy = el("div");
-      H.trans = card("How the shock travels", null, el("a", { class: "btn-ghost", href: "#view-how", onclick: (e) => { e.preventDefault(); goHowShock(st.mode === "custom" ? st.stype : null); } }, "Step by step →"));
-      H.trans.body.append(el("div"));
+      // Keep this explanation below the four result charts, collapsed by default.
+      // The state persists when shock parameters update or the page is rebuilt.
+      H.trans = card(null);
+      H.trans.body.append(
+        el("div", { class: "shock-travel-toolbar" },
+          el("a", { class: "btn-ghost", href: "#view-how", onclick: (e) => { e.preventDefault(); goHowShock(st.mode === "custom" ? st.stype : null); } }, "Step by step →")),
+        el("div"));
+      H.trans.root.classList.add("shock-travel-inner");
+      H.transFold = fold(st.open, "r-shock-travel", "How the shock travels", [H.trans.root]);
+      H.transFold.classList.add("card", "res-fold", "shock-travel-fold");
       H.bz = card("Distress score: what moved it", "Final year, shock against no shock. Each bar is one health check, times its weight in the score."); H.bz.body.append(el("div", { class: "chart" }));
       H.be = card("Expected fiscal cost: what moved it", "Final year, shock against no shock: a higher chance of distress, and more debt at stake."); H.be.body.append(el("div", { class: "chart" }));
       H.z = card("Distress score path", "Shock against the no-shock path for the same SOE"); H.z.body.append(legendRow([legendItem(LG.str, "With the shock"), legendItem(LG.base, "No shock"), legendItem(LG.act, "Shock active"), legendItem(LG.grey, "Grey zone"), legendItem(LG.dist, "Distress zone")]), el("div", { class: "chart" }));
@@ -2423,8 +2443,8 @@
       H.wfsFold = fold(st.open, "r-wfs", "Payment-priority scenarios and sensitivity (Senegal case)", [H.wfs.root], again);
       [H.cashFold, H.tblFold, H.wfsFold].forEach((d) => d.classList.add("card", "res-fold"));
       // paths first (how the score and the cost evolve), then the final-year bridges that explain them
-      H.out.replaceChildren(H.subsidy, H.trans.root, el("div", { class: "grid" }, el("div", { class: "s6" }, H.z.root), el("div", { class: "s6" }, H.e.root)),
-        el("div", { class: "grid" }, el("div", { class: "s6" }, H.bz.root), el("div", { class: "s6" }, H.be.root)), H.cashFold, H.tblFold, H.wfsFold);
+      H.out.replaceChildren(H.subsidy, el("div", { class: "grid" }, el("div", { class: "s6" }, H.z.root), el("div", { class: "s6" }, H.e.root)),
+        el("div", { class: "grid" }, el("div", { class: "s6" }, H.bz.root), el("div", { class: "s6" }, H.be.root)), H.transFold, H.cashFold, H.tblFold, H.wfsFold);
     },
     buildMacro() {
       const st = S.sh, H = this.H;
@@ -2760,7 +2780,7 @@
         [`Distress score, ${f["Calendar Year"]}`, `${fmt(f.Z_EM, 2)} · ${f.Zone}`, "vs no shock", dTxt(f.Z_EM - fb.Z_EM, (v) => fmt(v, 2), false)],
         [`Expected fiscal cost, ${f["Calendar Year"]}`, money(f.EFC, true), `PD ${pctAuto(f.PD)} · vs no shock`, dTxt(f.EFC - fb.EFC, money, true)],
       ];
-      put(H.trans.body.firstChild, el("ol", { class: "trans" }, steps.map(([t, v, s0, d], i) => el("li", { class: "trans-step" + (i === 0 ? " is-shock" : "") + (d ? " d-" + d[1] : "") },
+      put(H.trans.body.lastChild, el("ol", { class: "trans" }, steps.map(([t, v, s0, d], i) => el("li", { class: "trans-step" + (i === 0 ? " is-shock" : "") + (d ? " d-" + d[1] : "") },
           el("span", { class: "trans-t" }, t), el("b", { class: "trans-v num" }, v), el("span", { class: "trans-d num" }, d ? d[0] : s0), d ? el("span", { class: "trans-s" }, s0) : null))),
         el("p", { class: "note" }, shockOn ? `Read left to right: the shock changes ${st.soe}'s accounts, the gap is borrowed, the health checks weaken and the expected fiscal cost moves. Every number is compared with the same SOE's no-shock path.` : "No shock is set: this is the no-shock path. Choose Standard stress or a Custom shock in step 3."));
       // bridges: what moved the score, and what moved the cost

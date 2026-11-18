@@ -55,8 +55,8 @@ REPORT_ORDER = ["combined", "fuel", "fx", "rate", "revenue", "refi", "arrears"] 
 SCENARIOS = ["none"] + CHANNEL_KEYS
 # (dataset key in app-data, chip label in 'Try example data'; None = the dataset the page opens on)
 DATASETS = [("report", None), ("sample", "Example"), ("long", "Long panel")]
-TABS = ["Home", "How it works", "KPI Dashboard", "Distress Indicator", "Expected Fiscal Cost", "Shock Scenarios",
-        "Early Warning", "Report"]
+TABS = ["Home", "How it works", "KPI Dashboard", "Distress Indicator", "Expected Fiscal Cost", "Early Warning",
+        "Report", "Shock Scenarios"]
 BANNED = ["PD", "LGD", "EAD", "EFC", "Z″", "Z-EM", "X1", "X2", "X3", "X4", "bps", "s.d.", "std. dev.", "Monte Carlo",
           "P5", "P95", "percentile"]
 CASE_INSENSITIVE = {"bps", "std. dev.", "s.d.", "Monte Carlo", "percentile"}
@@ -319,7 +319,7 @@ def t2_gdp_default(browser):
 def analyst_refs(page, label):
     """(Expected Fiscal Cost aggregate tile text, {channel: Report stressed-cost text}) read in the Analyst view,
     then back to the Simple view."""
-    page.click("#modeSwitch")
+    page.click('#modeSwitch [data-mode-target="analyst"]')
     page.click("#t-efc")
     tile = page.locator("#efc .statstrip .tile .tile-value").first
     try:
@@ -340,7 +340,7 @@ def analyst_refs(page, label):
             rep[k] = money_text(rows.nth(i).locator("td").nth(4).text_content())
     else:
         fail(f"3a totals ({label}): Report 'Stress by channel' has {rows.count()} rows, expected {len(REPORT_ORDER)}")
-    page.click("#modeSwitch")
+    page.click('#modeSwitch [data-mode-target="simple"]')
     if not (present(page, "#simple", f"3a totals ({label})") and is_visible(page, "#simple")):
         fail(f"3a totals ({label}): #modeSwitch from Analyst view did not show #simple")
         return None, None
@@ -677,10 +677,10 @@ def t7_modes(browser):
         page.context.close()
         return
     check(not is_visible(page, "#tabs button[role=tab]"), "7 modes: tab buttons visible in Simple view")
-    check((text(page, "#modeSwitch") or "").strip() == "Analyst view", f"7 modes: #modeSwitch text in Simple view is {text(page, '#modeSwitch')!r}, expected 'Analyst view'")
-    page.click("#modeSwitch")
+    check(page.get_attribute('#modeSwitch [data-mode-target="simple"]', 'aria-pressed') == 'true' and page.get_attribute('#modeSwitch [data-mode-target="analyst"]', 'aria-pressed') == 'false', "7 modes: in Simple view the switch does not show 'Simple view' as selected")
+    page.click('#modeSwitch [data-mode-target="analyst"]')
     check(page.evaluate("document.body.dataset.mode") == "analyst", "7 modes: body[data-mode] not 'analyst' after #modeSwitch")
-    check((text(page, "#modeSwitch") or "").strip() == "Simple view", f"7 modes: #modeSwitch text in Analyst view is {text(page, '#modeSwitch')!r}, expected 'Simple view'")
+    check(page.get_attribute('#modeSwitch [data-mode-target="analyst"]', 'aria-pressed') == 'true' and page.get_attribute('#modeSwitch [data-mode-target="simple"]', 'aria-pressed') == 'false', "7 modes: in Analyst view the switch does not show 'Analyst view' as selected")
     labels = page.locator("#tabs button[role=tab]").evaluate_all(
         "els => els.filter(e => e.getClientRects().length > 0).map(e => e.textContent.trim())")
     check(labels == TABS, f"7 modes: visible tabs {labels}, expected {TABS}")
@@ -696,7 +696,7 @@ def t7_modes(browser):
         body = page.evaluate("id => { const e = document.getElementById(id); return e && !e.hidden ? e.innerText.trim().length : -1; }", target)
         check(body > 20, f"7 modes: tab '{lab}' shows no content (page #{target}, text length {body})")
         check(len(CTX["errors"]) == before, f"7 modes: page error opening '{lab}': {CTX['errors'][before:]}")
-    page.click("#modeSwitch")
+    page.click('#modeSwitch [data-mode-target="simple"]')
     check(is_visible(page, "#simple") and page.evaluate("document.body.dataset.mode") == "simple",
           "7 modes: #modeSwitch from Analyst view did not return to #simple")
     page.context.close()
@@ -705,7 +705,7 @@ def t7_modes(browser):
     check(is_visible(page, "#efc"), "7 modes: #view-efc did not show the Expected Fiscal Cost page")
     check(page.locator("#t-efc").get_attribute("aria-selected") == "true", "7 modes: #view-efc: tab 'Expected Fiscal Cost' not selected")
     if present(page, "#modeSwitch", "7 modes (deep link)"):
-        page.click("#modeSwitch")
+        page.click('#modeSwitch [data-mode-target="simple"]')
         check(is_visible(page, "#simple"), "7 modes: #modeSwitch after #view-efc did not return to #simple")
     page.context.close()
 
@@ -841,7 +841,7 @@ def t9_kpi(browser):
     check(isinstance(explain, dict) and bool(explain), "9 KPI: app-config has no CATEGORY_EXPLAIN")
     check(isinstance(plain, dict) and bool(plain), "9 KPI: app-config has no KPI_PLAIN")
     explain, plain = explain or {}, plain or {}
-    page.click("#modeSwitch")
+    page.click('#modeSwitch [data-mode-target="analyst"]')
     page.click("#t-kpi")
     if not present(page, "#kpi", "9 KPI Dashboard"):
         page.context.close()

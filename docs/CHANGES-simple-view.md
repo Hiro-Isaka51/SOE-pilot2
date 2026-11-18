@@ -76,6 +76,10 @@ Deep links are unchanged: `#view-efc` and the other tab links open the Analyst v
 - When the Simple view has filled GDP (always, for the examples), the Analyst cost tabs show their share-of-GDP figures from the start. Opened by a direct link first, they start blank as before.
 - The examples' shares use Senegal's GDP. They are illustrations: the SOEs are invented.
 
+## Merged with `main` of 17 November
+
+The first Simple view was merged as pull request #2, and four commits followed on `main` (`d0c8acf` to `99c7f1e`): the two-option Simple / Analyst switch, the tab order with Shock Scenarios last, the "How the shock travels" fold, the Distress Indicator chart order, styling, and a "GDP year" drop-down in the Simple view in place of the typed-GDP box. This branch merges all of them except the last. The Simple view takes GDP for the latest accounts year from the saved WEO table without asking, so the year drop-down is left out of it; the typed-GDP box stays as the fallback for a country the table and the World Bank cannot give. The GDP year can still be chosen in the Analyst GDP field. `templates/simple.js` is this branch's version; the tests follow the new switch and tab order.
+
 ## Left as they are (for the owner to decide)
 
 1. Loss share and exposure are stored twice (`S.efc.*` and `S.sh.*`), so the Expected Fiscal Cost and Shock tabs can show different costs for the same SOE. Simple view reads `S.efc.*`, as Home, Report and Early Warning do.

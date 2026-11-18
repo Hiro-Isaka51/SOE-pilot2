@@ -63,7 +63,8 @@ button { font: inherit; }
 /* title band */
 .band { background: var(--band-bg); color: var(--band-ink); }
 .band .inner { padding-block: 18px 16px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; }
-.eyebrow { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.eyebrow { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: #0071BC; font-weight: 700; }
+.band .eyebrow { color: #7FDBFF; }
 .band h1 { color: var(--band-ink); font-size: clamp(20px, 2.6vw, 26px); font-weight: 700; letter-spacing: -.01em; margin-top: 2px; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .meta span { font-size: 12px; color: var(--band-ink-2); background: var(--band-chip); border-radius: 2px; padding: 3px 9px; }
@@ -430,6 +431,58 @@ g.row:hover .bar.neg { fill: var(--neg); filter: brightness(.9); }
 .band-upload { font-size: 12.5px; font-weight: 700; color: var(--band-ink); background: transparent; border: 1px solid rgba(255, 255, 255, .45); border-radius: 2px; padding: 5px 12px; cursor: pointer; white-space: nowrap; }
 .band-upload:hover { background: rgba(255, 255, 255, .12); }
 .band-upload:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Two-option segmented view control, with sliding active selection. */
+.view-segment {
+  --segment-pad: 4px;
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  padding: var(--segment-pad);
+  border: 1px solid rgba(170,220,245,.55);
+  border-radius: 999px;
+  background: rgba(255,255,255,.09);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.13);
+  min-height: 40px;
+  isolation: isolate;
+}
+.view-segment-thumb {
+  position: absolute;
+  z-index: 0;
+  top: var(--segment-pad);
+  bottom: var(--segment-pad);
+  left: var(--segment-pad);
+  width: calc((100% - 2 * var(--segment-pad)) / 2);
+  border-radius: 999px;
+  background: #b4edff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.19);
+  transform: translateX(0);
+  transition: transform .28s cubic-bezier(.2,.75,.2,1), background-color .2s ease;
+}
+.view-segment[data-selected="analyst"] .view-segment-thumb { transform: translateX(100%); }
+.view-segment-option {
+  position: relative;
+  z-index: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #e4f4fd;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: color .2s ease;
+}
+.view-segment-option[aria-pressed="true"] { color: #002244; cursor: default; }
+.view-segment-option[aria-pressed="false"]:hover { color: #fff; }
+.view-segment-option:focus-visible { outline: 2px solid #b4edff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .view-segment-thumb, .view-segment-option { transition: none; }
+}
 
 /* home: load data (top of the page) */
 .upload-card { margin-bottom: 4px; }
@@ -1263,3 +1316,12 @@ body[data-tab="how"] { background: #f3f6f8; }
 /* the headline sits on the same left edge as the intro and the sections below */
 .lp-title { text-align: left; margin-left: 0; margin-right: 0; }
 /*__SIMPLE_CSS__*/
+
+
+
+/* Collapsible shock transmission path follows the four primary charts. */
+.shock-travel-fold { margin-top: 2px; }
+.shock-travel-fold > summary { cursor: pointer; font-weight: 700; font-size: 15px; color: var(--heading); }
+.shock-travel-fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.shock-travel-inner { border: 0; padding: 8px 0 0; box-shadow: none; }
+.shock-travel-toolbar { display: flex; justify-content: flex-end; margin: 0 0 10px; }

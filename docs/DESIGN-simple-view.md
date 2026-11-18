@@ -24,7 +24,7 @@ The tool's user is a country economist with little finance background. Round 1 c
 ## Plumbing (unchanged from round 1 unless noted)
 
 - `report.py` inlines `templates/simple.js` at `/*__SIMPLE_JS__*/` in `app.js` and `templates/simple.css` at `/*__SIMPLE_CSS__*/`. It also embeds `assets/weo_gdp.json` as `DATA.gdp` (round 2).
-- Mode: `body[data-mode="simple"|"analyst"]`, `#modeSwitch`, `S.lastAnalyst`, start page `simple` unless the URL hash names a page.
+- Mode: `body[data-mode="simple"|"analyst"]`; `#modeSwitch` is a two-option control (`[data-mode-target="simple"]`, `[data-mode-target="analyst"]`, `aria-pressed` on the selected one); `S.lastAnalyst`; start page `simple` unless the URL hash names a page.
 - `initPageState()` sets `S.simple = { scen: "none", soe: null, all: false, open: {} }` (`open` holds fold states). The Simple view adds `S.simple.snap`, the SOEs whose snapshot is open.
 
 ## GDP (round 2)

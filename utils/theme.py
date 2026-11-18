@@ -65,10 +65,10 @@ def inject():
             background: {THEME['heading']}; color: #FFFFFF; border-radius: 4px;
             padding: 22px 26px 20px; margin: 0 0 22px;
         }}
-        .sfp-eyebrow {{
-            color: {THEME['accent']}; font-size: {fs(11)}; font-weight: 700;
+        .sfp-eyebrow {
+            color: #7FDBFF; font-size: {fs(11)}; font-weight: 700;
             letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;
-        }}
+        }
         .sfp-page-title {{ font-size: {fs(25)}; font-weight: 700; color: #FFFFFF; margin: 0 0 6px; letter-spacing: -0.01em; line-height: 1.2; }}
         .sfp-page-subtitle {{
             font-size: {fs(13.5)}; color: rgba(255,255,255,.78); margin: 0; max-width: 80ch; line-height: 1.55;
